@@ -28,4 +28,5 @@ Thumbs.db
 # Repomix outputs
 repomix-output.*
 
-
+# Internal roadmaps & study notes
+roadmap.md

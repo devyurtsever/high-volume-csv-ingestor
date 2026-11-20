@@ -35,7 +35,18 @@ describe('decideFinalStatus', () => {
     expect(status).toBe('PARTIALLY_COMPLETED');
   });
 
-  it('returns FAILED when success_rows is 0', () => {
+  it('returns FAILED when success_rows is 0 and all rows are duplicates', () => {
+    const status = decideFinalStatus({
+      total_rows: 50,
+      processed_rows: 50,
+      success_rows: 0,
+      failed_rows: 0,
+      duplicate_rows: 50,
+    });
+    expect(status).toBe('FAILED');
+  });
+
+  it('returns FAILED when success_rows is 0 and all rows are validation errors', () => {
     const status = decideFinalStatus({
       total_rows: 50,
       processed_rows: 50,

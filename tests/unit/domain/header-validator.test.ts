@@ -27,16 +27,8 @@ describe('Header Validator', () => {
     const result = validateHeaders(rawHeaders);
     expect(result.isValid).toBe(true);
     expect(result.missingHeaders).toHaveLength(0);
-    expect(result.normalizedHeaders).toEqual([
-      'customer_id',
-      'first_name',
-      'last_name',
-      'national_id',
-      'email',
-      'phone',
-      'birth_date',
-      'created_date',
-    ]);
+    expect(result.duplicateHeaders).toHaveLength(0);
+    expect(result.unexpectedHeaders).toHaveLength(0);
   });
 
   it('strips UTF-8 BOM from the first header automatically', () => {
@@ -54,6 +46,42 @@ describe('Header Validator', () => {
     const result = validateHeaders(headersWithBom);
     expect(result.isValid).toBe(true);
     expect(result.normalizedHeaders[0]).toBe('customer_id');
+  });
+
+  it('rejects duplicate headers (e.g. Email, Email)', () => {
+    const duplicateHeaders = [
+      'Customer ID',
+      'First Name',
+      'Last Name',
+      'National ID',
+      'Email',
+      'Email', // duplicate!
+      'Phone',
+      'Birth Date',
+      'Created Date',
+    ];
+
+    const result = validateHeaders(duplicateHeaders);
+    expect(result.isValid).toBe(false);
+    expect(result.duplicateHeaders).toContain('email');
+  });
+
+  it('rejects unexpected extra headers to enforce strict schema contract', () => {
+    const extraHeaders = [
+      'Customer ID',
+      'First Name',
+      'Last Name',
+      'National ID',
+      'Email',
+      'Phone',
+      'Birth Date',
+      'Created Date',
+      'Unexpected_Column',
+    ];
+
+    const result = validateHeaders(extraHeaders);
+    expect(result.isValid).toBe(false);
+    expect(result.unexpectedHeaders).toContain('unexpected_column');
   });
 
   it('identifies missing headers and marks result as invalid', () => {

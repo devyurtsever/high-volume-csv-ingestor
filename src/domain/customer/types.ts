@@ -1,5 +1,19 @@
+export const CUSTOMER_FIELDS = [
+  'customer_id',
+  'first_name',
+  'last_name',
+  'national_id',
+  'email',
+  'phone',
+  'birth_date',
+  'created_date',
+] as const;
+
+export type CustomerField = (typeof CUSTOMER_FIELDS)[number];
+
 export type ValidationErrorCode =
   | 'REQUIRED_FIELD_MISSING'
+  | 'INVALID_CONTROL_CHARACTER'
   | 'INVALID_CUSTOMER_ID'
   | 'INVALID_FIRST_NAME'
   | 'INVALID_LAST_NAME'
@@ -9,7 +23,8 @@ export type ValidationErrorCode =
   | 'INVALID_BIRTH_DATE'
   | 'INVALID_CREATED_DATE'
   | 'CREATED_DATE_BEFORE_BIRTH_DATE'
-  | 'DATE_IN_FUTURE';
+  | 'DATE_IN_FUTURE'
+  | 'DUPLICATE_RECORD';
 
 export interface ValidationIssue {
   code: ValidationErrorCode;
@@ -40,4 +55,7 @@ export interface NormalizedCustomerRow {
   created_date: string;
 }
 
-export type ValidationRule = (row: RawCustomerRow) => ValidationIssue | ValidationIssue[] | null;
+export type ValidationRule = (
+  row: RawCustomerRow,
+  context?: { referenceToday?: string },
+) => ValidationIssue | ValidationIssue[] | null;

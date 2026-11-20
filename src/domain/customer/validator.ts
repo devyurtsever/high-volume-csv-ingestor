@@ -6,18 +6,24 @@ import type {
 } from './types.js';
 import { DEFAULT_CUSTOMER_RULES, normalizeTurkishPhone } from './rules.js';
 
+export interface ValidationContext {
+  referenceToday?: string; // Örn: '2026-11-21' (Testlerde veya zaman dilimi korumasında referans tarih)
+}
+
 /**
- * Validates a single customer row against an extensible chain of rules.
- * Collects ALL issues instead of failing on the first one (Strategy Pattern / Collect-All).
+ * Tek bir ham müşteri satırını kural zincirinden geçirir.
+ * İlk hatada DURMAZ; satırdaki TÜM hataları tek seferde toplar (Strategy Pattern / Collect-All).
+ * İsteğe bağlı 'context' parametresi ile zaman diliminden bağımsız, saf (pure) tarih kıyaslaması yapar.
  */
 export function validateRow(
   row: RawCustomerRow,
   rules: ValidationRule[] = DEFAULT_CUSTOMER_RULES,
+  context?: ValidationContext,
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
   for (const rule of rules) {
-    const result = rule(row);
+    const result = rule(row, context);
     if (!result) continue;
 
     if (Array.isArray(result)) {
@@ -31,8 +37,10 @@ export function validateRow(
 }
 
 /**
- * Normalizes a raw customer row into trimmed, sanitized, and standardized types.
- * Should only be called after validateRow returns an empty array of issues.
+ * Doğrulamadan başarıyla geçmiş bir satırı veritabanına yazılacak temiz formata dönüştürür:
+ * - Boşlukları temizler (trim).
+ * - E-postayı küçük harfe çevirir.
+ * - Telefonu uluslararası +905XXXXXXXXX formatına getirir.
  */
 export function normalizeRow(row: RawCustomerRow): NormalizedCustomerRow {
   const phone = row.phone?.trim() ?? '';

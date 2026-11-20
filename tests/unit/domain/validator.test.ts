@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { validateRow, normalizeRow } from '../../../src/domain/customer/validator.js';
-import type { RawCustomerRow } from '../../../src/domain/customer/types.js';
+import type { RawCustomerRow, ValidationRule } from '../../../src/domain/customer/types.js';
 
 describe('Customer Validator (validateRow & normalizeRow)', () => {
   it('returns an empty array when the row is completely valid', () => {
@@ -45,7 +45,6 @@ describe('Customer Validator (validateRow & normalizeRow)', () => {
 
     const issues = validateRow(multiErrorRow);
 
-    // Verify all errors were collected in one pass
     const issueCodes = issues.map((i) => i.code);
     expect(issueCodes).toContain('INVALID_NATIONAL_ID');
     expect(issueCodes).toContain('INVALID_EMAIL');
@@ -53,6 +52,28 @@ describe('Customer Validator (validateRow & normalizeRow)', () => {
     expect(issueCodes).toContain('DATE_IN_FUTURE');
     expect(issueCodes).toContain('CREATED_DATE_BEFORE_BIRTH_DATE');
     expect(issues.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('demonstrates Open-Closed Principle (OCP) by accepting custom rules without modifying core validator', () => {
+    const customVipRule: ValidationRule = (row) => {
+      if (row.customer_id?.startsWith('VIP') && !row.email?.endsWith('@vip.com')) {
+        return {
+          code: 'INVALID_EMAIL',
+          message: 'VIP customers must use @vip.com domain',
+          field: 'email',
+        };
+      }
+      return null;
+    };
+
+    const row: RawCustomerRow = {
+      customer_id: 'VIP-001',
+      email: 'user@regular.com',
+    };
+
+    const issues = validateRow(row, [customVipRule]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].message).toBe('VIP customers must use @vip.com domain');
   });
 
   it('normalizes email to lowercase and trims surrounding whitespace', () => {

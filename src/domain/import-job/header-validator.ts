@@ -1,56 +1,72 @@
-/**
- * Standard expected column headers in CSV files.
- */
-export const EXPECTED_HEADERS = [
-  'customer_id',
-  'first_name',
-  'last_name',
-  'national_id',
-  'email',
-  'phone',
-  'birth_date',
-  'created_date',
-] as const;
+import { CUSTOMER_FIELDS, type CustomerField } from '../customer/types.js';
 
-export type ExpectedHeader = (typeof EXPECTED_HEADERS)[number];
+// Dosyada bulunması gereken zorunlu 8 kolon başlığı
+export const EXPECTED_HEADERS: readonly string[] = CUSTOMER_FIELDS;
 
 export interface HeaderValidationResult {
   isValid: boolean;
   normalizedHeaders: string[];
   missingHeaders: string[];
+  duplicateHeaders: string[];
+  unexpectedHeaders: string[];
 }
 
-/**
- * Cleans UTF-8 BOM, trims whitespace, converts to lowercase,
- * and normalizes spaces/hyphens to underscores.
+/*
+ - Başlık metnini temizler:
+ - Excel'in başa koyduğu gizli dosya karakterini (BOM) siler, küçük harfe çevirir,
+ - boşluk ve tireleri alt çizgiye dönüştürür (örn: "Customer ID" -> "customer_id").
  */
 export function normalizeHeader(header: string): string {
   return header
-    .replace(/^\uFEFF/, '') // Strip UTF-8 BOM
+    .replace(/^\uFEFF/, '')
     .trim()
     .toLowerCase()
     .replace(/[\s-]+/g, '_');
 }
 
 /**
- * Validates the headers of an uploaded CSV file.
- * Requires all 8 standard customer columns to be present.
+ * CSV dosyasının başlık satırını denetler:
+ * 1. Zorunlu 8 başlığın hepsi var mı?
+ * 2. Aynı başlık iki kez yazılmış mı (örn: iki tane email kolonu)?
+ * 3. Beklenmeyen fazladan kolon var mı?
+ * Hepsini hatasız geçerse dosya okunmaya başlanabilir.
  */
 export function validateHeaders(rawHeaders: string[]): HeaderValidationResult {
   const normalizedHeaders = rawHeaders.map(normalizeHeader);
-  const headerSet = new Set(normalizedHeaders);
 
+  // Çift yazılmış (mükerrer) kolon kontrolü
+  const duplicates: string[] = [];
+  const seen = new Set<string>();
+  for (const h of normalizedHeaders) {
+    if (seen.has(h)) {
+      duplicates.push(h);
+    }
+    seen.add(h);
+  }
+
+  // Eksik zorunlu kolon kontrolü
   const missingHeaders: string[] = [];
-
   for (const expected of EXPECTED_HEADERS) {
-    if (!headerSet.has(expected)) {
+    if (!seen.has(expected)) {
       missingHeaders.push(expected);
     }
   }
 
+  // Şemada olmayan fazladan kolon kontrolü
+  const unexpectedHeaders = normalizedHeaders.filter(
+    (h) => !CUSTOMER_FIELDS.includes(h as CustomerField),
+  );
+
+  const isValid =
+    missingHeaders.length === 0 &&
+    duplicates.length === 0 &&
+    unexpectedHeaders.length === 0;
+
   return {
-    isValid: missingHeaders.length === 0,
+    isValid,
     normalizedHeaders,
     missingHeaders,
+    duplicateHeaders: Array.from(new Set(duplicates)),
+    unexpectedHeaders,
   };
 }

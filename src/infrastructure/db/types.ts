@@ -1,5 +1,6 @@
-export type ImportJobStatus =
-  'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'PARTIALLY_COMPLETED';
+import type { ImportJobStatus } from '../../domain/import-job/index.js';
+
+export type { ImportJobStatus };
 
 export interface ImportJob {
   id: string;

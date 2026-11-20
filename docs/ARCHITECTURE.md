@@ -2,7 +2,7 @@
 
 ## 1. System Overview & Context
 
-High-volume customer ingestion service designed to process large CSV files (up to 1M rows) reliably with minimal and bounded memory footprints.
+High-volume customer ingestion service designed to process large CSV files (scaling up to 1,000,000 rows) reliably with minimal and bounded memory footprints.
 
 ## 2. Architecture Diagram (Decoupled Processes)
 
@@ -11,12 +11,19 @@ _(To be detailed in Phase 7)_
 ## 3. Core Technical Decisions & Trade-offs
 
 - **Language & Runtime**: Node.js 24 LTS, strict TypeScript without unnecessary abstractions.
+  - _TypeScript Decision (Phase 2 Review)_: Confirmed strict TypeScript with `tsx` development runner. Strong static typing ensures zero boundary defects without build friction; development continues in TypeScript.
 - **Data Access**: Native `pg` with raw SQL for unnest-based bulk insertion and explicit concurrency control (`ON CONFLICT ... RETURNING`).
 - **Queueing & Async Execution**: BullMQ backed by Redis (`appendonly yes`) for crash-resilient task distribution.
 - **Streaming & Memory**: Node.js streams + `csv-parse` with automatic backpressure to prevent unbounded RAM usage.
 - **Checkpointing & Recovery**: Transactional batch commits saving `last_committed_row` alongside inserted entities and counters.
 - **Deadlock Mitigation**: Sorting batch records by `national_id` before insertion and handling `40P01` deadlock codes with bounded retries.
 - **Pagination**: Keyset pagination for error reporting instead of `OFFSET`.
+- **Domain Purity & Layer Inversion**: Domain layer contains pure deterministic business logic with zero I/O and zero dependencies on database/infrastructure layers. All database types reference domain types.
+- **Business Decisions & Domain Tolerances**:
+  - `created_date >= birth_date`: Permitted same-day customer creation for newborn customers.
+  - Mobile Phone Enforced: Accepts various Turkish inputs (`+905...`, `05...`, `5...`) and normalizes strictly to E.164 (`+905XXXXXXXXX`), mobile-only for SMS verification purposes.
+  - Delimiter Support: Configured for `,` and `;` to natively support Turkish locale Excel exports.
+  - PostgreSQL 16 UUID: Uses PostgreSQL 16 native `gen_random_uuid()`; `pgcrypto` extension is included for legacy compatibility.
 
 ## 4. Database Schema & ER Diagram
 

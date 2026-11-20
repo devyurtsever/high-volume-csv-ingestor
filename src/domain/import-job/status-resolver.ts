@@ -1,4 +1,4 @@
-import type { ImportJobStatus } from '../../infrastructure/db/types.js';
+import type { ImportJobStatus } from './types.js';
 
 export interface CountersInput {
   total_rows?: number | null;
@@ -8,13 +8,13 @@ export interface CountersInput {
   duplicate_rows: number;
 }
 
-/**
- * Pure function to decide final job status based on processing counters.
+/*
+ * Aktarım tamamlandığında sayaçlara bakarak dosyanın nihai durumuna karar verir.
  *
- * Rules:
- * - If total_rows is 0, or processed_rows is 0, or success_rows is 0 => FAILED
- * - If success_rows > 0 and (failed_rows === 0 and duplicate_rows === 0) => COMPLETED
- * - If success_rows > 0 and (failed_rows > 0 or duplicate_rows > 0) => PARTIALLY_COMPLETED
+ * Kurallar:
+ * 1. Hiç başarılı satır yoksa (veya dosya boşsa) => FAILED (Başarısız)
+ * 2. Hepsi başarıyla eklendiyse (sıfır hata, sıfır mükerrer) => COMPLETED (Tamamlandı)
+ * 3. Bir kısmı eklendi ama hatalı/mükerrer de varsa => PARTIALLY_COMPLETED (Kısmen Tamamlandı)
  */
 export function decideFinalStatus(counters: CountersInput): ImportJobStatus {
   const totalProcessed =

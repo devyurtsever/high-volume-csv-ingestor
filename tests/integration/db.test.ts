@@ -1,8 +1,18 @@
-import { describe, it, expect, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, afterAll, beforeAll, beforeEach } from 'vitest';
 import { pool, closePool } from '../../src/infrastructure/db/pool.js';
 import { withTransaction } from '../../src/infrastructure/db/transaction.js';
 
 describe('Database Schema & Constraints Integration Tests', () => {
+  beforeAll(() => {
+    // Safety guard: ensure tests do NOT truncate the development database
+    const dbUrl = pool.options.connectionString ?? '';
+    if (!dbUrl.includes('test')) {
+      throw new Error(
+        `Safety guard triggered: Integration tests must target a database containing 'test' in its name/URL. Current URL: ${dbUrl}`,
+      );
+    }
+  });
+
   beforeEach(async () => {
     // Clean tables before each test
     await pool.query('TRUNCATE TABLE import_row_errors, customers, import_jobs CASCADE;');
@@ -63,7 +73,7 @@ describe('Database Schema & Constraints Integration Tests', () => {
     });
 
     it('enforces counter balance: processed_rows = success_rows + failed_rows + duplicate_rows', async () => {
-      // Valid insert (0 = 0 + 0 + 0)
+      // Valid insert (10 = 5 + 3 + 2)
       const valid = await pool.query(
         `INSERT INTO import_jobs (
           owner_id, original_filename, stored_path, file_size_bytes,

@@ -1,29 +1,41 @@
-import type { RawCustomerRow, ValidationIssue, ValidationRule } from './types.js';
+import {
+  CUSTOMER_FIELDS,
+  type RawCustomerRow,
+  type ValidationIssue,
+  type ValidationRule,
+} from './types.js';
 import { isValidNationalId } from './national-id.js';
 
-export const REQUIRED_FIELDS = [
-  'customer_id',
-  'first_name',
-  'last_name',
-  'national_id',
-  'email',
-  'phone',
-  'birth_date',
-  'created_date',
-] as const;
+export { CUSTOMER_FIELDS };
 
 /**
- * Checks for non-empty presence of all required fields.
+ * Metinlerin içinde bozuk, görünmez veya metni kesen gizli karakterler olup olmadığını kontrol eder.
+ * PostgreSQL bu tarz bozuk karakterleri kabul etmediği için, veritabanına göndermeden önce
+ * burada yakalayıp 2000 kişilik toplu yüklemenin bozulmasını engelliyoruz.
  */
-export const requiredFieldsRule: ValidationRule = (row: RawCustomerRow) => {
+function hasIllegalControlCharacters(val: string): boolean {
+  for (let i = 0; i < val.length; i++) {
+    const code = val.charCodeAt(i);
+    // Standart boşluk ve satır sonu dışındaki görünmez bozuk sistem karakterlerini reddet
+    if (code === 0 || (code < 32 && code !== 9 && code !== 10 && code !== 13)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Satırdaki herhangi bir alanda bozuk veya gizli sistem karakteri varsa hata verir.
+ */
+export const controlCharactersRule: ValidationRule = (row: RawCustomerRow) => {
   const issues: ValidationIssue[] = [];
 
-  for (const field of REQUIRED_FIELDS) {
+  for (const field of CUSTOMER_FIELDS) {
     const val = row[field];
-    if (val === undefined || val === null || val.trim().length === 0) {
+    if (val && hasIllegalControlCharacters(val)) {
       issues.push({
-        code: 'REQUIRED_FIELD_MISSING',
-        message: `Field '${field}' is required and cannot be empty`,
+        code: 'INVALID_CONTROL_CHARACTER',
+        message: `'${field}' alanı bozuk veya geçersiz gizli sistem karakterleri içeriyor`,
         field,
       });
     }
@@ -33,16 +45,41 @@ export const requiredFieldsRule: ValidationRule = (row: RawCustomerRow) => {
 };
 
 /**
- * Validates Customer ID format and length.
+ * Zorunlu 8 alanın (ID, Ad, Soyad, TCKN, E-posta, Telefon, Doğum Tarihi, Kayıt Tarihi)
+ * dolu olup olmadığını kontrol eder. Boş veya sadece boşluktan oluşan alanları yakalar.
  */
+export const requiredFieldsRule: ValidationRule = (row: RawCustomerRow) => {
+  const issues: ValidationIssue[] = [];
+
+  for (const field of CUSTOMER_FIELDS) {
+    const val = row[field];
+    if (val === undefined || val === null || val.trim().length === 0) {
+      issues.push({
+        code: 'REQUIRED_FIELD_MISSING',
+        message: `'${field}' alanı zorunludur ve boş bırakılamaz`,
+        field,
+      });
+    }
+  }
+
+  return issues.length > 0 ? issues : null;
+};
+
+/**
+ * Müşteri Numarasını (Customer ID) denetler.
+ * Sadece harf, rakam, tire, nokta ve alt çizgi kabul eder. Boşluk veya HTML kodlarına izin vermez.
+ */
+const CUSTOMER_ID_REGEX = /^[a-zA-Z0-9_.-]{1,100}$/;
+
 export const customerIdRule: ValidationRule = (row: RawCustomerRow) => {
   const val = row.customer_id?.trim();
-  if (!val) return null; // Missing fields handled by requiredFieldsRule
+  if (!val) return null;
 
-  if (val.length > 100) {
+  if (!CUSTOMER_ID_REGEX.test(val)) {
     return {
       code: 'INVALID_CUSTOMER_ID',
-      message: 'Customer ID cannot exceed 100 characters',
+      message:
+        'Customer ID 1-100 karakter uzunluğunda olmalı ve sadece harf, rakam, tire, nokta veya alt çizgi içermelidir',
       field: 'customer_id',
     };
   }
@@ -51,16 +88,17 @@ export const customerIdRule: ValidationRule = (row: RawCustomerRow) => {
 };
 
 /**
- * Validates First Name format and length.
+ * Müşteri Adını denetler:
+ * En fazla 100 karakter olabilir. Sadece sayılardan oluşamaz ve zararlı kod (< veya >) içeremez.
  */
 export const firstNameRule: ValidationRule = (row: RawCustomerRow) => {
   const val = row.first_name?.trim();
   if (!val) return null;
 
-  if (val.length > 100) {
+  if (val.length > 100 || /^\d+$/.test(val) || /[<>]/.test(val)) {
     return {
       code: 'INVALID_FIRST_NAME',
-      message: 'First name cannot exceed 100 characters',
+      message: 'Ad 1-100 karakter arasında olmalı, sadece sayılardan oluşmamalı ve < veya > içeremez',
       field: 'first_name',
     };
   }
@@ -69,16 +107,18 @@ export const firstNameRule: ValidationRule = (row: RawCustomerRow) => {
 };
 
 /**
- * Validates Last Name format and length.
+ * Müşteri Soyadını denetler:
+ * En fazla 100 karakter olabilir. Sadece sayılardan oluşamaz ve zararlı kod (< veya >) içeremez.
  */
 export const lastNameRule: ValidationRule = (row: RawCustomerRow) => {
   const val = row.last_name?.trim();
   if (!val) return null;
 
-  if (val.length > 100) {
+  if (val.length > 100 || /^\d+$/.test(val) || /[<>]/.test(val)) {
     return {
       code: 'INVALID_LAST_NAME',
-      message: 'Last name cannot exceed 100 characters',
+      message:
+        'Soyad 1-100 karakter arasında olmalı, sadece sayılardan oluşmamalı ve < veya > içeremez',
       field: 'last_name',
     };
   }
@@ -87,7 +127,8 @@ export const lastNameRule: ValidationRule = (row: RawCustomerRow) => {
 };
 
 /**
- * Validates National ID using the official Turkish identity algorithm.
+ * T.C. Kimlik Numarasını resmi matematiksel formülüyle doğrular.
+ * 11 hane, ilk hanesi sıfır olmama, 10. ve 11. hane sağlama kurallarını denetler.
  */
 export const nationalIdRule: ValidationRule = (row: RawCustomerRow) => {
   const val = row.national_id?.trim();
@@ -96,7 +137,7 @@ export const nationalIdRule: ValidationRule = (row: RawCustomerRow) => {
   if (!isValidNationalId(val)) {
     return {
       code: 'INVALID_NATIONAL_ID',
-      message: 'National ID is not a valid Turkish identification number',
+      message: 'Geçersiz T.C. Kimlik Numarası',
       field: 'national_id',
     };
   }
@@ -105,7 +146,7 @@ export const nationalIdRule: ValidationRule = (row: RawCustomerRow) => {
 };
 
 /**
- * RFC 5322 compatible email pattern
+ * E-posta formatını denetler (ad@alanadi.com yapısında olup olmadığına bakar).
  */
 const EMAIL_REGEX =
   /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
@@ -117,7 +158,7 @@ export const emailRule: ValidationRule = (row: RawCustomerRow) => {
   if (val.length > 255 || !EMAIL_REGEX.test(val)) {
     return {
       code: 'INVALID_EMAIL',
-      message: 'Email address is invalid',
+      message: 'Geçersiz e-posta adresi formatı',
       field: 'email',
     };
   }
@@ -126,11 +167,11 @@ export const emailRule: ValidationRule = (row: RawCustomerRow) => {
 };
 
 /**
- * Normalizes Turkish phone numbers to +905XXXXXXXXX format.
- * Returns null if the number is not a valid Turkish mobile/landline number.
+ * Türkiye cep telefonu numaralarını temizleyip tek bir standarda (+905XXXXXXXXX) çevirir.
+ * Başındaki sıfırları, boşlukları, parantez ve tireleri kaldırır.
+ * SMS bildirimi ve arama kolaylığı için sadece 5 ile başlayan cep telefonlarını kabul eder.
  */
 export function normalizeTurkishPhone(phone: string): string | null {
-  // Strip spaces, dashes, dots, parentheses, and leading plus
   let cleaned = phone.replace(/[\s\-.()+]/g, '');
 
   if (cleaned.startsWith('0090')) {
@@ -141,7 +182,6 @@ export function normalizeTurkishPhone(phone: string): string | null {
     cleaned = cleaned.slice(1);
   }
 
-  // A valid Turkish phone number without country code is 10 digits starting with 5 (for mobile)
   if (/^5\d{9}$/.test(cleaned)) {
     return `+90${cleaned}`;
   }
@@ -149,6 +189,9 @@ export function normalizeTurkishPhone(phone: string): string | null {
   return null;
 }
 
+/**
+ * Telefon numarasının geçerli bir Türkiye cep telefonu olup olmadığını denetler.
+ */
 export const phoneRule: ValidationRule = (row: RawCustomerRow) => {
   const val = row.phone?.trim();
   if (!val) return null;
@@ -156,7 +199,8 @@ export const phoneRule: ValidationRule = (row: RawCustomerRow) => {
   if (!normalizeTurkishPhone(val)) {
     return {
       code: 'INVALID_PHONE',
-      message: 'Phone number must be a valid Turkish mobile number (e.g. +90 5XX XXX XX XX)',
+      message:
+        'Telefon numarası geçerli bir Türkiye cep telefonu olmalıdır (örn: +90 5XX XXX XX XX)',
       field: 'phone',
     };
   }
@@ -165,7 +209,8 @@ export const phoneRule: ValidationRule = (row: RawCustomerRow) => {
 };
 
 /**
- * Parses and verifies strict YYYY-MM-DD calendar dates.
+ * Tarih metnini (YYYY-MM-DD) gerçek bir takvim tarihine çevirir.
+ * Örneğin takvimde olmayan "30 Şubat" gibi uydurma tarihleri yakalar ve reddeder.
  */
 export function parseIsoDate(val: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(val)) return null;
@@ -190,7 +235,13 @@ export function parseIsoDate(val: string): Date | null {
   return date;
 }
 
-export const birthDateRule: ValidationRule = (row: RawCustomerRow) => {
+/**
+ * Doğum tarihini kontrol eder:
+ * - YYYY-MM-DD formatında olmalı.
+ * - 1900 yılından eski olamaz.
+ * - Henüz doğmamış kişileri engellemek için bugünden ileri bir tarih (gelecek) olamaz.
+ */
+export const birthDateRule: ValidationRule = (row: RawCustomerRow, context) => {
   const val = row.birth_date?.trim();
   if (!val) return null;
 
@@ -198,16 +249,16 @@ export const birthDateRule: ValidationRule = (row: RawCustomerRow) => {
   if (!date || date.getUTCFullYear() < 1900) {
     return {
       code: 'INVALID_BIRTH_DATE',
-      message: 'Birth date must be a valid date in YYYY-MM-DD format (year >= 1900)',
+      message: 'Doğum tarihi geçerli bir YYYY-MM-DD formatında olmalıdır (yıl >= 1900)',
       field: 'birth_date',
     };
   }
 
-  const now = new Date();
-  if (date > now) {
+  const todayStr = context?.referenceToday ?? new Date().toISOString().slice(0, 10);
+  if (val > todayStr) {
     return {
       code: 'DATE_IN_FUTURE',
-      message: 'Birth date cannot be in the future',
+      message: 'Doğum tarihi gelecekte bir tarih olamaz',
       field: 'birth_date',
     };
   }
@@ -215,7 +266,12 @@ export const birthDateRule: ValidationRule = (row: RawCustomerRow) => {
   return null;
 };
 
-export const createdDateRule: ValidationRule = (row: RawCustomerRow) => {
+/**
+ * Kayıt tarihini kontrol eder:
+ * - YYYY-MM-DD formatında olmalı.
+ * - Bugünden ileri bir tarih (gelecek) olamaz.
+ */
+export const createdDateRule: ValidationRule = (row: RawCustomerRow, context) => {
   const val = row.created_date?.trim();
   if (!val) return null;
 
@@ -223,35 +279,16 @@ export const createdDateRule: ValidationRule = (row: RawCustomerRow) => {
   if (!date || date.getUTCFullYear() < 1900) {
     return {
       code: 'INVALID_CREATED_DATE',
-      message: 'Created date must be a valid date in YYYY-MM-DD format',
+      message: 'Kayıt tarihi geçerli bir YYYY-MM-DD formatında olmalıdır',
       field: 'created_date',
     };
   }
 
-  const now = new Date();
-  if (date > now) {
+  const todayStr = context?.referenceToday ?? new Date().toISOString().slice(0, 10);
+  if (val > todayStr) {
     return {
       code: 'DATE_IN_FUTURE',
-      message: 'Created date cannot be in the future',
-      field: 'created_date',
-    };
-  }
-
-  return null;
-};
-
-export const dateOrderRule: ValidationRule = (row: RawCustomerRow) => {
-  const birthStr = row.birth_date?.trim();
-  const createdStr = row.created_date?.trim();
-  if (!birthStr || !createdStr) return null;
-
-  const birthDate = parseIsoDate(birthStr);
-  const createdDate = parseIsoDate(createdStr);
-
-  if (birthDate && createdDate && createdDate < birthDate) {
-    return {
-      code: 'CREATED_DATE_BEFORE_BIRTH_DATE',
-      message: 'Created date cannot be earlier than birth date',
+      message: 'Kayıt tarihi gelecekte bir tarih olamaz',
       field: 'created_date',
     };
   }
@@ -260,9 +297,35 @@ export const dateOrderRule: ValidationRule = (row: RawCustomerRow) => {
 };
 
 /**
- * Standard rule chain containing all verification rules.
+ * Tarih mantığını denetler:
+ * Bir kişinin sisteme kayıt tarihi, doğum tarihinden daha eski olamaz.
+ * (Hastanede doğduğu gün sisteme kaydı açılan bebekler için aynı gün doğup kaydolmak serbesttir).
+ */
+export const dateOrderRule: ValidationRule = (row: RawCustomerRow) => {
+  const birthStr = row.birth_date?.trim();
+  const createdStr = row.created_date?.trim();
+  if (!birthStr || !createdStr) return null;
+
+  const birthDate = parseIsoDate(birthStr);
+  const createdDate = parseIsoDate(createdStr);
+
+  if (birthDate && createdDate && createdStr < birthStr) {
+    return {
+      code: 'CREATED_DATE_BEFORE_BIRTH_DATE',
+      message: 'Kayıt tarihi doğum tarihinden önce olamaz',
+      field: 'created_date',
+    };
+  }
+
+  return null;
+};
+
+/**
+ * Müşteriler için tanımlı olan tüm kuralların listesi.
+ * validator.ts bu listeyi sırayla çalıştırır.
  */
 export const DEFAULT_CUSTOMER_RULES: ValidationRule[] = [
+  controlCharactersRule,
   requiredFieldsRule,
   customerIdRule,
   firstNameRule,
