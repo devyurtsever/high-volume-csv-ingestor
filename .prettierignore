@@ -3,4 +3,5 @@ dist
 coverage
 roadmap.md
 package-lock.json
+repomix-output.*
 
