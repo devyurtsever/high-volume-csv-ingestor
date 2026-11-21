@@ -33,7 +33,10 @@ const envSchema = z
     API_KEY: z.string().min(1).default('test-api-key-12345'),
     WORKER_CONCURRENCY: z.coerce.number().int().positive().default(2),
     BATCH_SIZE: z.coerce.number().int().positive().default(2000),
-    DELETE_FILE_AFTER_IMPORT: z.coerce.boolean().default(false),
+    DELETE_FILE_AFTER_IMPORT: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((v) => v === 'true'),
   })
   .superRefine((data, ctx) => {
     // Canlı ortamda (production) güvenlik açığı olmaması için test şifrelerini yasakla (Fail-Fast)
