@@ -1,0 +1,14 @@
+node_modules
+dist
+coverage
+.git
+.gitignore
+.env
+uploads/*
+!uploads/.gitkeep
+sample-data/sample-1m.csv
+.gemini
+.prettierrc
+.prettierignore
+eslint.config.mjs
+

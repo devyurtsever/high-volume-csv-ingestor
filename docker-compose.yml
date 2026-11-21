@@ -33,6 +33,82 @@ services:
       timeout: 5s
       retries: 5
 
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: 'no'
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/customer_import_db
+    command: ['npx', 'node-pg-migrate', 'up']
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOST: 0.0.0.0
+      LOG_LEVEL: info
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/customer_import_db
+      REDIS_URL: redis://redis:6379
+      API_KEY: ${API_KEY:-dev-local-key-change-me}
+      UPLOAD_DIR: /app/uploads
+      MAX_FILE_SIZE_BYTES: 524288000
+      BATCH_SIZE: 2000
+      DELETE_FILE_AFTER_IMPORT: 'false'
+    volumes:
+      - uploads_data:/app/uploads
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ['node', 'dist/worker.js']
+    stop_grace_period: 30s
+    mem_limit: 512m
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: info
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/customer_import_db
+      REDIS_URL: redis://redis:6379
+      API_KEY: ${API_KEY:-dev-local-key-change-me}
+      UPLOAD_DIR: /app/uploads
+      BATCH_SIZE: 2000
+      WORKER_CONCURRENCY: 2
+      DELETE_FILE_AFTER_IMPORT: 'false'
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
 volumes:
   postgres_data:
   redis_data:
+  uploads_data:
