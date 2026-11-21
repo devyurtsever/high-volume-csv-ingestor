@@ -23,6 +23,7 @@ RUN npm ci --omit=dev
 
 COPY --from=builder /app/dist ./dist
 COPY migrations ./migrations
+COPY docs ./docs
 
 # uploads dizinini oluştur ve node kullanıcısına sahiplik ver
 RUN mkdir -p uploads && chown -R node:node /app

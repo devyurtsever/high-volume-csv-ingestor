@@ -56,6 +56,15 @@ function parseArgs() {
   let duplicateRate = 0.02; // %2 mükerrer
   let seed = 42;
 
+  // Pozisyonel parametre desteği (örn: npm run generate:sample -- 50000 custom.csv)
+  if (args[0] && !args[0].startsWith('--')) {
+    const parsedRows = parseInt(args[0], 10);
+    if (!isNaN(parsedRows)) rows = parsedRows;
+    if (args[1] && !args[1].startsWith('--')) {
+      out = args[1];
+    }
+  }
+
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--rows' && args[i + 1]) rows = parseInt(args[i + 1], 10);
     if (args[i] === '--out' && args[i + 1]) out = args[i + 1];

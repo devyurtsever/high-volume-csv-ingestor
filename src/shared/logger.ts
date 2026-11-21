@@ -18,6 +18,7 @@ export const logger = pino({
       'national_id',
       'tckn',
       'email',
+      'phone',
     ],
     censor: '[REDACTED]',
   },

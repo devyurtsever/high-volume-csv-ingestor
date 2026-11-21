@@ -17,7 +17,16 @@ export function createApp(appContainer = container): Express {
 
   // 1. Request logging & security headers
   app.use(loggingMiddleware);
-  app.use(helmet()); // HTTP headersları ekliyoruz
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+          'upgrade-insecure-requests': null,
+        },
+      },
+    }),
+  );
   app.use(rateLimitMiddleware);
   app.use(express.json());
 

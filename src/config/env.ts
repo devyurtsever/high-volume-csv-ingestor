@@ -30,7 +30,7 @@ const envSchema = z
     MAX_FILE_SIZE_BYTES: z.coerce.number().int().positive().default(524288000),
 
     // API Güvenlik anahtarı, eşzamanlı çalışacak worker sayısı ve toplu yazma (batch) boyutu
-    API_KEY: z.string().min(1).default('test-api-key-12345'),
+    API_KEY: z.string().min(1).default('dev-local-key-change-me'),
     WORKER_CONCURRENCY: z.coerce.number().int().positive().default(2),
     BATCH_SIZE: z.coerce.number().int().positive().default(2000),
     DELETE_FILE_AFTER_IMPORT: z
