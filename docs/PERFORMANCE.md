@@ -28,7 +28,7 @@ _Generated via deterministic dataset benchmarks and real PostgreSQL query execut
 
 ## 2. PostgreSQL Execution Plan Analysis (EXPLAIN ANALYZE BUFFERS)
 
-These plans were captured with **1,000,000 active customer rows** and over **50,000 row errors** in the database.
+These plans were captured with **1,000,000 active customer rows** and over **70,000 row errors** in the database.
 
 ### Query 1: Keyset Pagination on Error Listing
 
@@ -55,7 +55,7 @@ Planning Time: 1.319 ms
 Execution Time: 0.158 ms
 ```
 
-_Analysis_: Demonstrates an immediate **Index Scan** utilizing the compound unique index `uq_import_row_errors_import_row`. Because keyset pagination jumps directly to `row_number > 500` via the B-Tree leaf pages without traversing discarded rows, execution cost is flat and independent of page depth.
+_Analysis_: Demonstrates an immediate **Index Scan** utilizing the compound unique index `uq_import_row_errors_import_row` (evaluated on the simplified keyset predicate to isolate pure B-Tree seek behavior). Because keyset pagination jumps directly to `row_number > 500` via the B-Tree leaf pages without traversing discarded rows, execution cost is flat and independent of page depth.
 
 ---
 
@@ -80,7 +80,7 @@ Planning Time: 0.081 ms
 Execution Time: 0.029 ms
 ```
 
-_Analysis_: Demonstrates single-row retrieval via **Index Scan** on `uq_customers_national_id` with minimal buffer hits, guaranteeing `ON CONFLICT` deduplication scales linearly without full-table degradation.
+_Analysis_: Demonstrates point lookup / constraint index probe via **Index Scan** on `uq_customers_national_id` with minimal buffer hits (rows=0 confirms non-existent key seek in 0.029 ms), guaranteeing `ON CONFLICT` deduplication scales linearly without full-table degradation.
 
 ---
 

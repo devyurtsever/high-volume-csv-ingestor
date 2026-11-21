@@ -224,16 +224,16 @@ curl -X POST http://localhost:3000/api/v1/imports \
   -F "file=@sample-data/sample-customers-10k.csv"
 ```
 
-**Response (`202 Accepted` - Sample output):**
+**Response (`202 Accepted` - Live output):**
 
 ```json
 {
-  "id": "e6740698-4c81-4328-98e6-12a9e59cb873",
+  "id": "ca4639e1-fa6b-4a76-9782-283b70701620",
   "status": "PENDING",
-  "statusUrl": "http://localhost:3000/api/v1/imports/e6740698-4c81-4328-98e6-12a9e59cb873",
+  "statusUrl": "http://localhost:3000/api/v1/imports/ca4639e1-fa6b-4a76-9782-283b70701620",
   "original_filename": "sample-customers-10k.csv",
   "file_size_bytes": 1011544,
-  "created_at": "2026-11-22T00:15:00.000Z"
+  "created_at": "2026-11-21T22:59:20.879Z"
 }
 ```
 
@@ -243,14 +243,14 @@ curl -X POST http://localhost:3000/api/v1/imports \
 
 ```bash
 curl -s -H "X-API-Key: dev-local-key-change-me" \
-  http://localhost:3000/api/v1/imports/e6740698-4c81-4328-98e6-12a9e59cb873
+  http://localhost:3000/api/v1/imports/ca4639e1-fa6b-4a76-9782-283b70701620
 ```
 
-**Response (`200 OK` - Sample output):**
+**Response (`200 OK` - Live output):**
 
 ```json
 {
-  "id": "e6740698-4c81-4328-98e6-12a9e59cb873",
+  "id": "ca4639e1-fa6b-4a76-9782-283b70701620",
   "original_filename": "sample-customers-10k.csv",
   "file_size_bytes": 1011544,
   "status": "PARTIALLY_COMPLETED",
@@ -260,10 +260,10 @@ curl -s -H "X-API-Key: dev-local-key-change-me" \
   "failed_rows": 504,
   "duplicate_rows": 177,
   "progress_percentage": 100,
-  "last_committed_row": 10000,
-  "created_at": "2026-11-22T00:15:00.000Z",
-  "started_at": "2026-11-22T00:15:00.200Z",
-  "finished_at": "2026-11-22T00:15:00.790Z",
+  "last_committed_row": 10001,
+  "created_at": "2026-11-21T22:59:20.879Z",
+  "started_at": "2026-11-21T22:59:20.901Z",
+  "finished_at": "2026-11-21T22:59:21.929Z",
   "error_message": null
 }
 ```
@@ -276,38 +276,38 @@ Retrieve paginated row errors without `OFFSET` overhead. Pass `after_row` (curso
 
 ```bash
 curl -s -H "X-API-Key: dev-local-key-change-me" \
-  "http://localhost:3000/api/v1/imports/e6740698-4c81-4328-98e6-12a9e59cb873/errors?limit=2"
+  "http://localhost:3000/api/v1/imports/ca4639e1-fa6b-4a76-9782-283b70701620/errors?limit=1"
 ```
 
-**Response (`200 OK` - Sample output):**
+**Response (`200 OK` - Live output):**
 
 ```json
 {
   "data": [
     {
-      "id": 1,
-      "import_id": "e6740698-4c81-4328-98e6-12a9e59cb873",
-      "row_number": 15,
+      "id": "1224894",
+      "import_id": "ca4639e1-fa6b-4a76-9782-283b70701620",
+      "row_number": 5,
       "error_type": "VALIDATION",
-      "error_codes": ["INVALID_NATIONAL_ID"],
-      "error_message": "Invalid National ID checksum",
+      "error_codes": ["INVALID_EMAIL"],
+      "error_message": "Geçersiz e-posta adresi formatı",
       "raw_data": {
-        "customer_id": "CUST-0015",
-        "first_name": "Can",
-        "last_name": "Demir",
-        "national_id": "11111111111",
-        "email": "can@example.com",
-        "phone": "+905551234567",
-        "birth_date": "1990-01-01",
-        "created_date": "2024-01-01"
+        "customer_id": "CUST-0000004",
+        "first_name": "Mehmet",
+        "last_name": "Cetin",
+        "national_id": "62623785290",
+        "email": "invalid-email-address",
+        "phone": "+905551000004",
+        "birth_date": "1990-05-15",
+        "created_date": "2023-01-10"
       },
-      "created_at": "2026-11-22T00:15:00.500Z"
+      "created_at": "2026-11-21T22:59:20.980Z"
     }
   ],
   "pagination": {
-    "next_cursor": 15,
+    "next_cursor": 5,
     "has_more": true,
-    "limit": 2
+    "limit": 1
   }
 }
 ```
@@ -320,7 +320,7 @@ Streams all error records for the import as an Excel-ready CSV file. Includes UT
 
 ```bash
 curl -s -H "X-API-Key: dev-local-key-change-me" \
-  http://localhost:3000/api/v1/imports/e6740698-4c81-4328-98e6-12a9e59cb873/errors/export \
+  http://localhost:3000/api/v1/imports/ca4639e1-fa6b-4a76-9782-283b70701620/errors/export \
   -o errors.csv
 ```
 
@@ -330,14 +330,14 @@ curl -s -H "X-API-Key: dev-local-key-change-me" \
 
 ```bash
 curl -s -H "X-API-Key: dev-local-key-change-me" \
-  http://localhost:3000/api/v1/imports/e6740698-4c81-4328-98e6-12a9e59cb873/summary
+  http://localhost:3000/api/v1/imports/ca4639e1-fa6b-4a76-9782-283b70701620/summary
 ```
 
-**Response (`200 OK` - Sample output matching 10K dataset):**
+**Response (`200 OK` - Live output matching 10K dataset):**
 
 ```json
 {
-  "id": "e6740698-4c81-4328-98e6-12a9e59cb873",
+  "id": "ca4639e1-fa6b-4a76-9782-283b70701620",
   "status": "PARTIALLY_COMPLETED",
   "total_rows": 10000,
   "processed_rows": 10000,
@@ -345,17 +345,17 @@ curl -s -H "X-API-Key: dev-local-key-change-me" \
   "failed_rows": 504,
   "duplicate_rows": 177,
   "success_rate": 93.19,
-  "duration_seconds": 0.59,
-  "rows_per_second": 16949.15,
+  "duration_seconds": 1.03,
+  "rows_per_second": 9727.63,
   "error_distribution": [
     { "code": "DUPLICATE_RECORD", "count": 177 },
-    { "code": "CREATED_DATE_BEFORE_BIRTH_DATE", "count": 160 },
-    { "code": "INVALID_EMAIL", "count": 92 },
-    { "code": "INVALID_PHONE", "count": 92 },
-    { "code": "INVALID_NATIONAL_ID", "count": 91 },
-    { "code": "DATE_IN_FUTURE", "count": 81 },
-    { "code": "REQUIRED_FIELD_MISSING", "count": 80 },
-    { "code": "INVALID_BIRTH_DATE", "count": 8 }
+    { "code": "CREATED_DATE_BEFORE_BIRTH_DATE", "count": 158 },
+    { "code": "INVALID_NATIONAL_ID", "count": 110 },
+    { "code": "DATE_IN_FUTURE", "count": 90 },
+    { "code": "INVALID_PHONE", "count": 89 },
+    { "code": "INVALID_EMAIL", "count": 85 },
+    { "code": "REQUIRED_FIELD_MISSING", "count": 82 },
+    { "code": "INVALID_BIRTH_DATE", "count": 10 }
   ]
 }
 ```
@@ -387,7 +387,7 @@ To generate arbitrary-sized deterministic datasets (e.g., 100,000 or 1,000,000 r
 
 ```bash
 # Generate 1,000,000 rows (~98 MB)
-npm run generate:sample -- --rows 1000000 --out sample-data/benchmark-1m.csv
+npm run generate:sample -- --rows 1000000 --out sample-data/sample-1m.csv
 ```
 
 The generator uses a deterministic Mulberry32 PRNG and generates algorithmically valid Republic of Turkey TCKN numbers satisfying official checksum verification rules.

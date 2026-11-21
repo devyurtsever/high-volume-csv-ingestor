@@ -237,13 +237,13 @@ The codebase adheres strictly to Clean Architecture principles, ensuring clear s
   SELECT id, import_id, row_number, error_type, error_codes, error_message, raw_data, created_at
   FROM import_row_errors
   WHERE import_id = $1
-    AND row_number > $2
-    AND ($4::varchar IS NULL OR error_type = $4)
+    AND ($2::int IS NULL OR row_number > $2)
+    AND ($3::varchar IS NULL OR error_type = $3)
   ORDER BY row_number ASC
-  LIMIT $3; -- Queries limit + 1 to compute has_more
+  LIMIT $4; -- Queries limit + 1 to compute has_more
   ```
 - **Rationale**:
-  - **O(log n) B-Tree Seek**: Leveraging the composite unique index `uq_import_row_errors_import_row`, PostgreSQL seeks directly to the target leaf node in **0.116 ms** (total query execution in 0.158 ms), completely independent of page depth.
+  - **O(log n) B-Tree Seek**: Leveraging the composite unique index `uq_import_row_errors_import_row`, PostgreSQL seeks directly to the target leaf node in **0.116 ms** (total query execution in 0.158 ms, measured on isolated B-Tree keyset seek), completely independent of page depth.
 - **Discarded Alternative (`OFFSET / LIMIT`)**:
   - `OFFSET N` forces PostgreSQL to sequentially scan and discard the first N rows (O(n) complexity), degrading query latency as clients page deeper into error logs.
 
@@ -306,6 +306,11 @@ Processing 1,000,000 rows without streaming causes unbounded heap growth, result
   - Processed 1,000,000 rows in **40.45 seconds** (~24,722 rows/sec).
   - Peak process RSS was observed at **254.48 MB**, reflecting the combined V8 heap of development transpilers and the benchmark harness.
 
+### Memory Variance Analysis (Host vs. Container)
+
+- **Host Execution (`tsx`)**: The observed peak heap of ~119 MB (and 254 MB RSS) is driven by `tsx` running esbuild in-memory compilation, maintaining source-map tables, and running the benchmark harness code within the same process.
+- **Container Execution (Alpine Node.js 24)**: Runs pre-transpiled JavaScript (`node dist/worker.js`) in a production container without development tooling, achieving the sampled ≈52 MiB peak RAM footprint.
+
 ---
 
 ## 8. Failure Recovery & Retry Semantics
@@ -367,3 +372,20 @@ Processing 1,000,000 rows without streaming causes unbounded heap growth, result
    - If the API server experiences catastrophic power loss in the exact microsecond between writing `PENDING` to PostgreSQL and enqueuing to Redis, the job remains orphaned in `PENDING`. Production deployments should implement an asynchronous sweeper cron to detect and fail stale `PENDING` jobs.
 10. **Domain Dependencies Nuance**:
     - While the Domain layer performs strictly Zero I/O, `header-parser.ts` imports `csv-parse/sync` for synchronous string parsing, and `ImportProcessorService` directly imports `UnrecoverableError` from `bullmq` and `env` from configuration.
+
+---
+
+## 11. Future Work & Scaling Roadmap
+
+To scale the ingestion service beyond 1,000,000 records to multi-tenant, high-throughput cloud environments (10M+ rows/file and distributed clusters), the following architectural enhancements are identified:
+
+1. **Declarative Table Partitioning for Error Logs**:
+   - The `import_row_errors` table accumulates fine-grained validation records that can reach tens of millions of rows across multiple jobs. Implementing PostgreSQL declarative partitioning (List or Hash partitioning on `import_id`, or Range partitioning on `created_at`) enables instant cleanup of expired error logs via partition detachment (`ALTER TABLE DETACH PARTITION` / `DROP TABLE`), eliminating table bloat and high write-amplification associated with massive `DELETE` transactions.
+2. **S3 / Cloud Object Storage Adapter**:
+   - Replace local mounted volume disk storage (`uploads/`) with an S3-compatible object store (AWS S3, MinIO, Cloudflare R2, or Google Cloud Storage). Files can be uploaded via client presigned URLs directly to object storage or streamed using multipart uploads, allowing API and Worker processes to scale independently across distinct Kubernetes nodes without requiring shared persistent volumes (NFS/EFS).
+3. **Unlogged Staging Table + `COPY` Bulk Ingestion**:
+   - For ultra-high volume ingestions (>10,000,000 records), raw PostgreSQL `COPY` theoretically offers higher bulk ingestion throughput by bypassing SQL expression evaluation; an architecture streaming into an unlogged staging table via `COPY`, followed by an atomic `INSERT INTO customers SELECT ... ON CONFLICT DO NOTHING`, represents a viable scaling path for extreme datasets (this alternative was not measured in this project).
+4. **Distributed Rate Limiting (Redis Token Bucket)**:
+   - The current Express rate limiter utilizes an in-memory window per API process. In a horizontally scaled production deployment with multiple API replicas behind a load balancer, migrating rate limiting to a shared Redis-backed sliding window token bucket ensures uniform tenant rate enforcement across all nodes.
+5. **Asynchronous Orphaned `PENDING` Sweeper Cron**:
+   - Implement an automated background sweeper job that periodically queries for jobs remaining in `PENDING` status for longer than 5 minutes (indicating an unrecoverable API crash prior to Redis enqueue completion) and automatically marks them `FAILED` with an alert notification.
