@@ -91,6 +91,10 @@ paths:
           $ref: '#/components/responses/PayloadTooLarge'
         '422':
           $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
 
@@ -139,8 +143,12 @@ paths:
                   totalPages:
                     type: integer
                     example: 3
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
   /api/v1/imports/{id}:
     get:
@@ -163,8 +171,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ImportJobDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -173,7 +185,7 @@ paths:
       summary: List import row errors with keyset pagination
       description: |
         Returns row-level errors (validation failures and duplicates) using deterministic keyset (cursor) pagination.
-        Does not use OFFSET to ensure constant O(1) performance even with hundreds of thousands of errors.
+        Does not use OFFSET, leveraging B-Tree index seeking with O(log n) complexity independent of page depth.
       parameters:
         - name: id
           in: path
@@ -230,8 +242,12 @@ paths:
                       limit:
                         type: integer
                         example: 50
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -273,8 +289,12 @@ paths:
               schema:
                 type: string
                 format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -299,8 +319,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ImportSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -448,6 +472,16 @@ components:
           properties:
             code:
               type: string
+              enum:
+                - VALIDATION_ERROR
+                - BAD_REQUEST
+                - UNAUTHORIZED
+                - NOT_FOUND
+                - PAYLOAD_TOO_LARGE
+                - UNPROCESSABLE_ENTITY
+                - TOO_MANY_REQUESTS
+                - SERVICE_UNAVAILABLE
+                - INTERNAL_SERVER_ERROR
               example: BAD_REQUEST
             message:
               type: string
@@ -483,6 +517,18 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
     UnprocessableEntity:
       description: CSV headers are missing, duplicated, or invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooManyRequests:
+      description: Too many requests - rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalServerError:
+      description: Internal server error
       content:
         application/json:
           schema:
