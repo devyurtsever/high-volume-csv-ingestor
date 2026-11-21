@@ -255,7 +255,7 @@ LIMIT 10;
 \`\`\`text
 ${explainResults.jobsPlan}
 \`\`\`
-*Analysis*: Leverages the composite index \`idx_import_jobs_owner_created\` to perform a bounded index scan for recent job histories, eliminating in-memory sorting.
+*Analysis*: Leverages the composite index \`idx_import_jobs_owner_created_at\` to perform a bounded index scan for recent job histories, eliminating in-memory sorting.
 
 ---
 
@@ -267,7 +267,7 @@ ${explainResults.jobsPlan}
   - This is well below the container's 512 MB ceiling, confirming that the backpressure-driven \`for await\` stream processing and batch commits prevent heap saturation and eliminate OOM risks.
 `;
 
-  const performanceMdPath = path.resolve(process.cwd(), 'docs/PERFORMANCE.md');
+  const performanceMdPath = path.resolve(process.cwd(), 'docs/PERFORMANCE.generated.md');
   await fs.promises.writeFile(performanceMdPath, performanceMdContent, 'utf-8');
   console.log(`\nSuccessfully wrote benchmark report to ${performanceMdPath}`);
 }
