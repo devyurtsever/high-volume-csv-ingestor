@@ -51,7 +51,10 @@ export class ImportProcessorService {
           const totalRows = await this.storage.countLines(storedPath);
           await this.repository.updateTotalRows(importId, totalRows);
         } catch (countErr) {
-          logger.warn({ importId, err: countErr }, 'Could not pre-count lines, proceeding');
+          logger.warn(
+            { importId, err: countErr instanceof Error ? countErr.message : String(countErr) },
+            'Could not pre-count lines, proceeding',
+          );
         }
       }
 
@@ -216,7 +219,12 @@ export class ImportProcessorService {
 
       if (isCsvError) {
         const errorMsg = err.message || 'Corrupted CSV syntax';
-        logger.error({ importId, err }, 'Unrecoverable CSV syntax error');
+        const errorCode = (err as { code: string }).code;
+        // PII güvenliği: csv-parse err nesnesi ham satır içeriği (TCKN, ad, email) taşıyabileceğinden sadece code ve message loglanır
+        logger.error(
+          { importId, err: { code: errorCode, message: errorMsg } },
+          'Unrecoverable CSV syntax error',
+        );
         await this.repository.finishJob(importId, 'FAILED', undefined, errorMsg);
         if (env.DELETE_FILE_AFTER_IMPORT) {
           await this.storage.deleteFile(storedPath);
@@ -225,7 +233,13 @@ export class ImportProcessorService {
       }
 
       // Geçici hatalarda hata fırlatılır; BullMQ exponential backoff ile tekrar dener
-      logger.error({ importId, err }, 'Transient error encountered during import processing');
+      logger.error(
+        {
+          importId,
+          err: err instanceof Error ? { name: err.name, message: err.message } : String(err),
+        },
+        'Transient error encountered during import processing',
+      );
       throw err;
     }
   }
