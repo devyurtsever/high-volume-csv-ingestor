@@ -6,7 +6,7 @@ interface RateLimitRecord {
 }
 
 const WINDOW_MS = 15 * 60 * 1000;
-const MAX_REQUESTS = 300;
+const MAX_REQUESTS = 1500; // 15 dakikada 1500 istek (özellikle UI polling / yoklama yapıldığında 429 almamak için)
 
 const clients = new Map<string, RateLimitRecord>();
 

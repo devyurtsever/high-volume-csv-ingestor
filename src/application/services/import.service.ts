@@ -5,7 +5,10 @@ import type {
   PaginationOptions,
 } from '../ports/import-repository.port.js';
 import type { ImportQueuePort } from '../ports/import-queue.port.js';
-import type { FileStoragePort } from '../ports/file-storage.port.js';
+import type {
+  FileStoragePort,
+  UploadedFile,
+} from '../ports/file-storage.port.js';
 import { parseHeaderLine } from '../../domain/import-job/header-parser.js';
 import { validateHeaders } from '../../domain/import-job/header-validator.js';
 import {
@@ -33,7 +36,7 @@ export class ImportService {
   ) {}
 
   async uploadImport(
-    file: Express.Multer.File | undefined,
+    file: UploadedFile | undefined,
     ownerId: string,
     baseUrl: string,
   ): Promise<UploadImportResult> {

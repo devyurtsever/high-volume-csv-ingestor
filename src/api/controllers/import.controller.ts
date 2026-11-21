@@ -31,7 +31,15 @@ export class ImportController {
 
       const baseUrl = `${req.protocol}://${req.get('host') ?? 'localhost'}`;
 
-      const result = await this.importService.uploadImport(req.file, ownerId, baseUrl);
+      const result = await this.importService.uploadImport(
+        {
+          path: req.file.path,
+          originalname: req.file.originalname,
+          size: req.file.size,
+        },
+        ownerId,
+        baseUrl,
+      );
 
       // Return 202 Accepted: request has been accepted for processing
       res.status(202).json({

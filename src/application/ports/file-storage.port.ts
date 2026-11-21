@@ -1,3 +1,13 @@
+/**
+ * Servis katmanının Express/Multer gibi harici framework tiplerine bağımlı olmaması için
+ * yüklenen dosyanın sadece ihtiyaç duyulan temel bilgilerini soyutlayan arayüz.
+ */
+export interface UploadedFile {
+  path: string;
+  originalname: string;
+  size: number;
+}
+
 /*
   - FILE STORAGE PORT (Dosya Depolama Arayüzü Sözleşmesi)
  
