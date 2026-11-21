@@ -18,7 +18,7 @@ _Generated via deterministic dataset benchmarks and real PostgreSQL query execut
 
 ### Key Architectural Takeaways
 
-1. **Bounded Memory Profile (O(1) Memory Overhead)**:
+1. **Bounded Memory Profile**:
    - Regardless of file scale (10K vs 1,000,000 rows), peak RSS memory remains tightly controlled and consistently well below the container's **512 MB limit** (`254.48 MB` at 1M rows).
    - This proves that Node.js streaming with `csv-parse` + natural backpressure via batch unnest execution prevents unbounded heap allocation.
 2. **Stable Throughput**:
@@ -109,7 +109,7 @@ Planning Time: 0.094 ms
 Execution Time: 0.104 ms
 ```
 
-_Analysis_: Leverages the composite index `idx_import_jobs_owner_created` to perform a bounded index scan for recent job histories, eliminating in-memory sorting.
+_Analysis_: Leverages the composite index `idx_import_jobs_owner_created_at` to perform a bounded index scan for recent job histories, eliminating in-memory sorting.
 
 ---
 
@@ -134,4 +134,4 @@ _Analysis_: Leverages the composite index `idx_import_jobs_owner_created` to per
 
 - **Host RSS Memory**: **254.48 MB** (Includes development runtime, tsx execution, TypeScript compiler hooks, and test instrumentation in a single host process).
 - **Duration**: **40.45s** (~24,722 rows/sec).
-- **Variance Analysis**: The throughput difference between host runner (~25k/sec) and Docker (~20k/sec) stems from virtualization bridge overhead, cross-container network serialization, and mounted shared volume file I/O within Docker Desktop. Both runtimes strictly prove $O(1)$ memory scalability well beneath 512 MB.
+- **Variance Analysis**: The throughput difference between host runner (~25k/sec) and Docker (~20k/sec) stems from virtualization bridge overhead, cross-container network serialization, and mounted shared volume file I/O within Docker Desktop. Both runtimes strictly prove bounded memory scalability well beneath 512 MB.

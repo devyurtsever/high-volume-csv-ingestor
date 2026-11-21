@@ -2,62 +2,368 @@
 
 ## 1. System Overview & Context
 
-High-volume customer ingestion service designed to process large CSV files (scaling up to 1,000,000 rows) reliably with minimal and bounded memory footprints.
+The **High-Volume Customer CSV Ingestion Service** is an asynchronous microservice engineered to process large customer CSV files (tested up to 1,000,000 records) with strictly bounded memory utilization, transactional integrity, and resilient crash recovery.
 
-## 2. Architecture Diagram (Decoupled Processes)
+### High-Level Requirements & Guarantees
 
-_(To be detailed in Phase 7)_
+- **Throughput**: Processes up to 1,000,000 records in under 60 seconds (>20,000 rows/second).
+- **Constant Memory Footprint**: Ingests arbitrarily sized files within a 512 MiB container limit using Node.js stream backpressure. Live container worker consumes only **≈52 MiB peak RAM** (sampled via `docker stats` under a 512 MiB cgroup ceiling).
+- **Data Integrity & Deduplication**: Database-enforced deduplication via target-less `ON CONFLICT DO NOTHING` handling unique constraints across both `customer_id` and `national_id`.
+- **Resilience**: Transactional batch checkpointing allows transparent recovery from the last committed row without double-insertions.
 
-## 3. Core Technical Decisions & Trade-offs
+---
 
-- **Language & Runtime**: Node.js 24 LTS, strict TypeScript without unnecessary abstractions.
-  - _TypeScript Decision (Phase 2 Review)_: Confirmed strict TypeScript with `tsx` development runner. Strong static typing ensures zero boundary defects without build friction; development continues in TypeScript.
-- **Data Access**: Native `pg` with raw SQL for unnest-based bulk insertion and explicit concurrency control (`ON CONFLICT ... RETURNING`).
-- **Queueing & Async Execution**: BullMQ backed by Redis (`appendonly yes`) for crash-resilient task distribution.
-- **Streaming & Memory**: Node.js streams + `csv-parse` with automatic backpressure to prevent unbounded RAM usage.
-- **Checkpointing & Recovery**: Transactional batch commits saving `last_committed_row` alongside inserted entities and counters.
-- **Worker Claim Semantics & Distributed Locking**: The SQL job claim query intentionally permits claiming jobs with `status IN ('PENDING', 'PROCESSING')` to facilitate seamless crash recovery from checkpoints (`last_committed_row`). Consequently, the database query alone does not prevent duplicate concurrent executions of an already `PROCESSING` job; single-worker mutual exclusion is strictly guaranteed by BullMQ's Redis-backed distributed locks (`lockDuration` with automatic heartbeat renewals). This is a documented design trade-off prioritizing transparent recovery over rigid single-state database-level assertions.
-- **Deadlock Mitigation**: Sorting batch records by `national_id` before insertion and handling `40P01` deadlock codes with bounded retries.
-- **Pagination**: Keyset pagination for error reporting instead of `OFFSET`.
-- **Domain Purity & Layer Inversion**: Domain layer contains pure deterministic business logic with zero I/O and zero dependencies on database/infrastructure layers. All database types reference domain types.
-- **Business Decisions & Domain Tolerances**:
-  - `created_date >= birth_date`: Permitted same-day customer creation for newborn customers.
-  - Mobile Phone Enforced: Accepts various Turkish inputs (`+905...`, `05...`, `5...`) and normalizes strictly to E.164 (`+905XXXXXXXXX`), mobile-only for SMS verification purposes.
-  - Delimiter Support: Configured for `,` and `;` to natively support Turkish locale Excel exports.
-  - PostgreSQL 16 UUID: Uses PostgreSQL 16 native `gen_random_uuid()`; `pgcrypto` extension is included for legacy compatibility.
+## 2. Decoupled Architecture & Sequence Flow
 
-## 4. Database Schema & ER Diagram
+The application decouples HTTP file ingestion from the CPU/IO-heavy parsing and database insertion pipeline using an asynchronous message queue (BullMQ backed by Redis).
 
-_(To be detailed in Phase 1 & 7)_
+### End-to-End Ingestion Flow (Mermaid Sequence)
 
-## 5. Security & Error Handling
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client
+    participant Express as Express API (Upload Handler)
+    participant Disk as Local File Storage (uploads/)
+    participant DB as PostgreSQL
+    participant Redis as Redis (BullMQ Queue)
+    participant Worker as BullMQ Worker Process
 
-- **Authentication & IDOR Protection**: SHA-256 hashed API keys with timing-safe comparison (`crypto.timingSafeEqual`). Every query strictly enforces `owner_id` scoping.
-- **KVKK / GDPR & PII Protection in Logging**: Personal Identifiable Information (TCKN, phone, email, and full raw row strings) is strictly excluded from application log streams. In unrecoverable syntax and CSV parser errors, `err` objects are sanitized to emit only `{ code, message }` without serializing parser contexts or raw record payloads into logs.
-- **CSV Formula Injection (DDE Mitigation)**: In error export CSVs, any cell value beginning with `=`, `+`, `-`, `@`, `\t`, or `\r` is automatically prepended with a single quote (`'`), ensuring spreadsheet software (Excel, Google Sheets) treats it strictly as a string literal and does not evaluate formulas.
-- **Keyset vs OFFSET Pagination**: Error listing uses deterministic keyset pagination (`row_number > cursor ORDER BY row_number ASC LIMIT limit + 1`). This avoids performance degradation associated with scanning large `OFFSET` offsets and provides reliable `has_more` detection without extra count queries.
-- **Streaming Export Semantics**:
-  - **Processing Concurrency**: The error export endpoint (`GET /api/v1/imports/:id/errors/export`) can be invoked while an import job is actively `PROCESSING`; in this case, it streams errors committed to the database up to that point.
-  - **Mid-stream Error Handling**: Once HTTP headers (`Content-Type: text/csv`) are dispatched, errors cannot be communicated via JSON status codes. If a database or network failure occurs during streaming, the server logs the error and destroys the HTTP response socket (`res.destroy()`). Consequently, the client receives a truncated (partial) CSV file. Clients can verify complete delivery by comparing received rows with the job's `failed_rows + duplicate_rows` counter upon completion.
+    Note over Client, Express: Step 1: Ingestion & Dual-Write Guard
+    Client->>Express: POST /api/v1/imports (multipart/form-data)
+    Express->>Disk: Stream file to disk (Multer, validate header)
+    Disk-->>Express: File saved (path, size)
+    Express->>DB: INSERT INTO import_jobs (status='PENDING')
+    DB-->>Express: Job created (import_id)
 
-## 6. Benchmarks & Performance
+    alt Redis Available (Standard Path)
+        Express->>Redis: importQueue.add(importJob)
+        Redis-->>Express: Job enqueued
+        Express-->>Client: 202 Accepted { id, status: 'PENDING', statusUrl }
+    else Redis Down / Outage (Dual-Write Failure)
+        Express->>DB: UPDATE import_jobs SET status='FAILED' WHERE id=import_id
+        Express->>Disk: Unlink / delete uploaded file
+        Express-->>Client: 503 Service Unavailable { error: { code: 'SERVICE_UNAVAILABLE' } }
+    end
 
-Comprehensive benchmarks were executed on real datasets scaling up to 1,000,000 rows. The system demonstrated deterministic bounded resource usage and linear scalability:
+    Note over Redis, Worker: Step 2: Background Processing & Checkpointing
+    Worker->>Redis: Acquire next job (distributed lock acquired)
+    Worker->>DB: Claim job (status='PROCESSING', started_at=NOW())
+    Worker->>Disk: createReadStream(stored_path)
 
-- **10K Records**: Processed in **0.59s** (~16,949 rows/sec), Peak RSS: 128.64 MB.
-- **100K Records**: Processed in **3.35s** (~29,851 rows/sec), Peak RSS: 250.38 MB.
-- **1,000,000 Records (Docker Container)**: Processed in **49.84s** (~20,066 rows/sec), Peak Container RAM: **51.84 MiB** (sampled via `docker stats` under `mem_limit: 512m`, utilizing just 10.1% of capacity). Host-level direct runner observed at 254.48 MB peak RSS.
-- **PostgreSQL Execution Plans (`EXPLAIN ANALYZE BUFFERS`)**:
-  - Keyset error pagination achieves direct B-Tree leaf seeks (`uq_import_row_errors_import_row`) in **0.158 ms**.
-  - Customer unique constraint lookups execute in **0.029 ms**.
-  - Job history queries run in **0.104 ms**.
+    loop Stream CSV with Natural Backpressure (Batches of 2,000 rows via for-await)
+        Disk->>Worker: Stream chunks (csv-parse)
+        Worker->>Worker: Validate domain rules & TCKN checksum
 
-For full benchmark tables, execution plans, and memory analysis, refer to [docs/PERFORMANCE.md](./PERFORMANCE.md).
+        rect rgb(240, 248, 255)
+            Note over Worker, DB: Atomic Batch Transaction (UNNEST)
+            Worker->>DB: BEGIN Transaction
+            Worker->>DB: INSERT INTO customers SELECT * FROM unnest(...) ORDER BY national_id, source_row_number ON CONFLICT DO NOTHING RETURNING source_row_number
+            Worker->>DB: INSERT INTO import_row_errors SELECT * FROM unnest(...) ON CONFLICT (import_id, row_number) DO NOTHING
+            Worker->>DB: UPDATE import_jobs SET processed_rows, success_rows, failed_rows, duplicate_rows, last_committed_row
+            Worker->>DB: COMMIT Transaction
+        end
+    end
 
-## 7. Known Limitations & Architectural Trade-offs
+    Worker->>DB: UPDATE import_jobs SET status=COMPLETED/PARTIALLY_COMPLETED, finished_at=NOW()
+    Worker->>Redis: Acknowledge job completion
+```
 
-- **Batch Size Heuristic**: The default `BATCH_SIZE=2000` was selected as a sensible initial baseline balancing database round-trips and memory footprint rather than exhaustive multi-workload hyperparameter tuning.
-- **Row Numbering with Multiline CSV Fields**: `currentRowNumber` increments per emitted parsed customer record. While fully aligned with physical line numbers for standard rows, files containing multiline newlines within quoted cells may result in record index divergence relative to physical file line counts.
-- **Rollback Error Masking in Transactions**: If the database socket abruptly terminates while issuing an explicit `ROLLBACK` statement, the secondary rollback error could mask the primary operational query failure in raw error cascades.
-- **Redis Job Retention**: Completed and failed jobs retain queue metadata (`removeOnFail: false`) to support dead-letter inspection and troubleshooting, which requires periodic Redis retention grooming in long-running production environments.
-- **Storage Lifecycle**: When `DELETE_FILE_AFTER_IMPORT=false`, processed staging files persist in the mounted `uploads/` directory for audit and recovery purposes; production deployments require external log/storage rotation policies.
+---
+
+## 3. Domain Model & Database Schema
+
+The persistence layer uses raw SQL migrations executed via `node-pg-migrate`. Tables are strictly normalized and indexed for high-volume batch operations and cursor pagination.
+
+### Entity-Relationship Diagram (Mermaid ER)
+
+```mermaid
+erDiagram
+    import_jobs ||--o{ customers : "imports"
+    import_jobs ||--o{ import_row_errors : "logs"
+
+    import_jobs {
+        uuid id PK
+        varchar owner_id "Truncated SHA-256 (16 chars)"
+        varchar original_filename
+        varchar stored_path
+        bigint file_size_bytes
+        varchar status "PENDING | PROCESSING | COMPLETED | FAILED | PARTIALLY_COMPLETED"
+        integer total_rows
+        integer processed_rows
+        integer success_rows
+        integer failed_rows
+        integer duplicate_rows
+        integer last_committed_row
+        integer attempts
+        text error_message
+        timestamptz created_at
+        timestamptz started_at
+        timestamptz finished_at
+    }
+
+    customers {
+        bigint id PK "GENERATED ALWAYS AS IDENTITY"
+        varchar customer_id UK "Unique Customer ID"
+        char national_id UK "11-digit TCKN"
+        varchar first_name
+        varchar last_name
+        varchar email
+        varchar phone "Normalized E.164 (+905...)"
+        date birth_date
+        date created_date
+        uuid source_import_id FK
+        integer source_row_number
+        timestamptz imported_at
+    }
+
+    import_row_errors {
+        bigint id PK "GENERATED ALWAYS AS IDENTITY"
+        uuid import_id FK
+        integer row_number
+        varchar error_type "VALIDATION | DUPLICATE"
+        text_array error_codes
+        text error_message
+        jsonb raw_data
+        timestamptz created_at
+    }
+```
+
+### Indexing Strategy & EXPLAIN Performance
+
+1. **`customers` Unique Constraints (`uq_customers_customer_id`, `uq_customers_national_id`)**:
+   - Two distinct unique B-Tree indexes. Enables atomic deduplication via target-less `ON CONFLICT DO NOTHING`.
+   - Benchmark verification: Unique constraint lookup executes in **0.029 ms**.
+2. **`import_row_errors(import_id, row_number)` (Composite Unique B-Tree `uq_import_row_errors_import_row`)**:
+   - Powers deterministic Keyset (cursor) pagination.
+   - Benchmark verification: Index leaf seek executes in **0.116 ms**, completely eliminating sequential table scans.
+3. **`import_jobs(owner_id, created_at DESC)` (Composite B-Tree `idx_import_jobs_owner_created_at`)**:
+   - Powers IDOR-isolated paginated job history (`GET /api/v1/imports`).
+
+---
+
+## 4. Clean Architecture Layers
+
+The codebase adheres strictly to Clean Architecture principles, ensuring clear separation of concerns across domain rules, application orchestration, and infrastructure implementations.
+
+```text
+               ┌────────────────────────────────────────────────────────┐
+               │                   Presentation / API                   │
+               │   (Express Controllers, Middlewares, Routes, Swagger)  │
+               └───────────────────────────┬────────────────────────────┘
+                                           │
+               ┌───────────────────────────▼────────────────────────────┐
+               │                   Application Layer                    │
+               │  (ImportService, ImportProcessorService, ReportService)│
+               │  [Ports: Repositories, Queue, Storage Interfaces]      │
+               └───────────────────────────┬────────────────────────────┘
+                                           │
+               ┌───────────────────────────▼────────────────────────────┐
+               │                     Domain Layer                       │
+               │  (Customer Rules, TCKN Checksum, Status Resolver)      │
+               │  [PURE BUSINESS LOGIC - ZERO I/O]                      │
+               └────────────────────────────────────────────────────────┘
+                                           ▲
+                                           │ (Implements Ports)
+               ┌───────────────────────────┴────────────────────────────┐
+               │                  Infrastructure Layer                  │
+               │  (pg Pool, BullMQ, Redis, Local File Storage)          │
+               └───────────────────────────┘
+```
+
+1. **Domain Layer (`src/domain/`)**: Pure business logic with **Zero I/O operations**. Contains the Republic of Turkey TCKN checksum algorithm, date validation rules, status resolution logic, and CSV formula sanitization. _(Note: `header-parser.ts` uses synchronous in-memory parsing via `csv-parse/sync` without filesystem I/O)._
+2. **Application Layer (`src/application/`)**: Coordinates use cases (`ImportService`, `ImportProcessorService`, `ReportService`) and defines port contracts (`ImportRepositoryPort`, `ImportQueuePort`, `FileStoragePort`, `ReportRepositoryPort`).
+3. **Infrastructure Layer (`src/infrastructure/`)**: Implements application ports using PostgreSQL (`pg`), Redis (`ioredis`, `bullmq`), and filesystem storage.
+4. **API Layer (`src/api/`)**: Express controllers, multipart streaming upload middleware, authentication middleware, keyset pagination formatting, and global error handling. Wired manually via `container.ts` (Manual Dependency Injection).
+
+---
+
+## 5. Core Technical Decisions & Discarded Alternatives
+
+### 1. Redis / BullMQ vs. PostgreSQL `FOR UPDATE SKIP LOCKED`
+
+- **Selected**: **BullMQ backed by Redis (`appendonly yes`)**.
+- **Rationale**:
+  - Provides distributed locking with automatic heartbeat renewal (`lockDuration`), preventing split-brain execution across multiple workers.
+  - Stalled job recovery: If a worker process abruptly dies, its heartbeat ceases. Once `lockDuration` expires, BullMQ marks the job as stalled and re-queues it for execution.
+  - Offloads queue polling and progress events from PostgreSQL, reserving database connection pools and I/O exclusively for batch data ingestion.
+- **Discarded Alternative (PostgreSQL `FOR UPDATE SKIP LOCKED`)**:
+  - Polling a relational database under heavy bulk ingestion creates lock contention and connection pool exhaustion. Detecting crashed workers also requires custom heartbeat watchdog mechanisms.
+
+---
+
+### 2. Native `pg` Raw SQL vs. Prisma / TypeORM
+
+- **Selected**: **Native `pg` Pool with parameterized raw SQL**.
+- **Rationale**:
+  - **Memory Footprint**: ORMs instantiate full TypeScript object models (hydration) for every row, bloating V8 heap memory when handling 2,000-record batches.
+  - **PostgreSQL Control**: Direct control over `UNNEST` array parameters, transaction boundaries, and raw connection release without middleware overhead.
+- **Discarded Alternative (ORMs)**:
+  - While Prisma supports `$queryRaw`, using an ORM for high-throughput batch ingestion introduces abstraction layers without performance benefits while complicating connection pool tuning.
+
+---
+
+### 3. PostgreSQL `UNNEST` vs. `COPY`
+
+- **Selected**: **Multi-column `UNNEST` with target-less `ON CONFLICT DO NOTHING`**.
+- **SQL Implementation** (`src/infrastructure/repositories/pg-import.repository.ts`):
+  ```sql
+  INSERT INTO customers (
+    customer_id, national_id, first_name, last_name, email, phone,
+    birth_date, created_date, source_import_id, source_row_number
+  )
+  SELECT * FROM unnest(
+    $1::varchar[], $2::char(11)[], $3::varchar[], $4::varchar[],
+    $5::varchar[], $6::varchar[], $7::date[], $8::date[],
+    $9::uuid[], $10::int[]
+  ) AS t(customer_id, national_id, first_name, last_name, email, phone, birth_date, created_date, source_import_id, source_row_number)
+  ORDER BY national_id, source_row_number
+  ON CONFLICT DO NOTHING
+  RETURNING source_row_number;
+  ```
+- **Rationale**:
+  - **Atomic Deduplication Across Multiple Constraints**: The `customers` table has two separate unique constraints (`uq_customers_customer_id` and `uq_customers_national_id`). A target-less `ON CONFLICT DO NOTHING` catches duplicate violations on **either** column. If a specific target like `(national_id)` were provided, a `customer_id` collision would throw an unhandled `23505` unique violation error and abort the batch.
+  - **Zero Intermediate Storage**: Detects inserted vs. conflicting rows atomically using `RETURNING source_row_number` without temporary staging tables.
+- **Discarded Alternative (`COPY FROM STDIN`)**:
+  - `COPY` does not support `ON CONFLICT`. Utilizing `COPY` would require streaming rows into a temporary staging table, executing an `INSERT INTO ... SELECT ... ON CONFLICT`, and dropping the staging table.
+
+---
+
+### 4. Keyset (Cursor) Pagination vs. `OFFSET`
+
+- **Selected**: **Keyset pagination based on `row_number`**.
+- **SQL Implementation** (`src/infrastructure/repositories/pg-report.repository.ts`):
+  ```sql
+  SELECT id, import_id, row_number, error_type, error_codes, error_message, raw_data, created_at
+  FROM import_row_errors
+  WHERE import_id = $1
+    AND row_number > $2
+    AND ($4::varchar IS NULL OR error_type = $4)
+  ORDER BY row_number ASC
+  LIMIT $3; -- Queries limit + 1 to compute has_more
+  ```
+- **Rationale**:
+  - **O(log n) B-Tree Seek**: Leveraging the composite unique index `uq_import_row_errors_import_row`, PostgreSQL seeks directly to the target leaf node in **0.116 ms** (total query execution in 0.158 ms), completely independent of page depth.
+- **Discarded Alternative (`OFFSET / LIMIT`)**:
+  - `OFFSET N` forces PostgreSQL to sequentially scan and discard the first N rows (O(n) complexity), degrading query latency as clients page deeper into error logs.
+
+---
+
+## 6. Concurrency, Deadlock Mitigation & Worker Claim Semantics
+
+### 1. Deadlock Mitigation via SQL Sorting
+
+When concurrent workers insert batches with overlapping customer sets, acquiring row-level locks on unique indexes in conflicting orders can cause PostgreSQL error `40P01 (deadlock_detected)`.
+
+- **Mitigation**: Batches are strictly ordered inside PostgreSQL via SQL:
+  ```sql
+  ORDER BY national_id, source_row_number
+  ```
+- **Bounded Deadlock Retry**: If a `40P01` error occurs despite sorting, the repository retries the batch up to 3 times with jittered linear delay (`50 * attempt + Math.floor(Math.random() * 50) ms`):
+  ```typescript
+  const isDeadlock = (err as { code?: string })?.code === '40P01';
+  if (isDeadlock && attempt < MAX_DEADLOCK_RETRIES) {
+    const delay = 50 * attempt + Math.floor(Math.random() * 50);
+    await new Promise((r) => setTimeout(r, delay));
+    continue;
+  }
+  ```
+
+### 2. Worker Claim Semantics & Distributed Locking
+
+The SQL job claim query permits claiming jobs with `status IN ('PENDING', 'PROCESSING')`:
+
+```sql
+UPDATE import_jobs
+SET status = 'PROCESSING', started_at = COALESCE(started_at, NOW()), attempts = attempts + 1
+WHERE id = $1 AND status IN ('PENDING', 'PROCESSING')
+RETURNING *;
+```
+
+- **Architectural Trade-off**: This query intentionally allows a restarted worker to reclaim an interrupted job to resume from its `last_committed_row` checkpoint.
+- **Mutual Exclusion**: Single-worker execution is strictly enforced by BullMQ's Redis distributed lock (`lockDuration` with automatic heartbeat renewal). Two workers cannot simultaneously process the same BullMQ job.
+
+---
+
+## 7. Memory Management & Natural Backpressure
+
+Processing 1,000,000 rows without streaming causes unbounded heap growth, resulting in V8 Out-Of-Memory (`FATAL ERROR: Ineffective mark-compacts near heap limit`) termination.
+
+### Natural Backpressure Implementation
+
+- The worker uses Node.js `fs.createReadStream` piped into `csv-parse`.
+- Ingestion runs inside a `for await (const record of parser)` loop.
+- When accumulated valid records reach `BATCH_SIZE` (2,000 rows), the loop calls `await this.commitBatch(...)`.
+- While the database transaction is awaiting commit, execution in the async iterator naturally pauses, applying stream backpressure without manual `pause()`/`resume()` calls.
+- Upon transaction commit, the batch arrays are cleared and the async iterator pulls the next chunk from disk.
+
+### Measured Memory Performance
+
+- **Docker Container (Hard limit: 512 MiB)**:
+  - Processed 1,000,000 rows in **49.84 seconds** (~20,066 rows/sec).
+  - Peak container memory sampled via `docker stats` (approx. 1-second sampling frequency) was **≈52 MiB** (utilizing only 10.1% of the 512 MiB cgroup allocation).
+- **Direct Host Execution (`tsx` runner)**:
+  - Processed 1,000,000 rows in **40.45 seconds** (~24,722 rows/sec).
+  - Peak process RSS was observed at **254.48 MB**, reflecting the combined V8 heap of development transpilers and the benchmark harness.
+
+---
+
+## 8. Failure Recovery & Retry Semantics
+
+1. **Transactional Checkpointing**:
+   - Every batch commits `last_committed_row` in the same transaction as customer records and error rows:
+     ```sql
+     UPDATE import_jobs SET
+       processed_rows = processed_rows + $2,
+       success_rows = success_rows + $3,
+       failed_rows = failed_rows + $4,
+       duplicate_rows = duplicate_rows + $5,
+       last_committed_row = $6
+     WHERE id = $1;
+     ```
+2. **Crash Recovery & Stalled Job Detection**:
+   - If a worker process crashes, its lock renewal heartbeats cease. When `lockDuration` expires, BullMQ flags the job as stalled and re-queues it.
+   - The worker container defines `stop_grace_period: 30s` in Docker Compose, giving in-flight batch transactions up to 30 seconds to commit cleanly before SIGKILL during deployments.
+   - When resumed, the worker reads `job.last_committed_row`. While streaming the CSV file, it discards records where `row_number <= last_committed_row`.
+   - Real processing resumes seamlessly at `last_committed_row + 1`, guaranteeing zero duplicate database insertions and consistent counters.
+3. **Error Classification**:
+   - **Transient Errors** (temporary DB blips, deadlocks): Throws standard `Error`. BullMQ re-queues the job for automatic retry up to configured attempts.
+   - **Unrecoverable Errors** (corrupted CSV syntax, empty file): Throws `UnrecoverableError`. BullMQ halts retries immediately, and the job is marked `FAILED` with the exact error cause saved to `error_message`.
+
+---
+
+## 9. Security, Privacy & Error Handling
+
+- **Authentication & Timing Attack Prevention**:
+  - API keys are hashed with SHA-256 and compared using `crypto.timingSafeEqual` to eliminate timing side-channel attacks.
+- **IDOR Protection (Insecure Direct Object References)**:
+  - Client-facing job queries (`GET /imports/:id`, `GET /imports`) strictly enforce `WHERE id = $1 AND owner_id = $2`. Access attempts to jobs belonging to another client return `404 Not Found` (rather than `403 Forbidden`) to prevent resource enumeration. Internal worker queries claim jobs by ID directly.
+- **KVKK / GDPR & PII Protection in Logging**:
+  - Personal Identifiable Information (TCKN, phone, email, and raw CSV line buffers) is excluded by design and never interpolated into application log streams. In syntax error scenarios, parser error objects are sanitized to emit only `{ code, message }`.
+- **CSV Formula Injection (DDE Mitigation)**:
+  - Exported error CSVs (`GET /api/v1/imports/:id/errors/export`) sanitize all cell contents. Any string starting with `=`, `+`, `-`, `@`, `\t`, or `\r` is automatically prepended with a single quote (`'`), ensuring spreadsheet applications treat values strictly as text literals.
+
+---
+
+## 10. Known Limitations & Architectural Trade-offs
+
+1. **Multiline CSV Record Numbering**:
+   - `currentRowNumber` increments per emitted parsed customer record. While fully aligned with physical line numbers for standard rows, files containing multiline newlines within quoted cells may result in record index divergence relative to physical file line counts.
+2. **Transaction Rollback Error Masking**:
+   - If the PostgreSQL socket connection abruptly closes while issuing an explicit `ROLLBACK` statement, the secondary network error can mask the primary operational query failure in raw error logs.
+3. **Redis Failed Set Retention**:
+   - Completed and failed BullMQ jobs are retained in Redis (`removeOnFail: false`) to facilitate administrative inspection, requiring periodic Redis maintenance or eviction policies in high-throughput environments.
+4. **Staged Upload Lifecycle**:
+   - When `DELETE_FILE_AFTER_IMPORT=false`, processed CSV files remain on the mounted `uploads/` volume for auditability. Production deployments require external log/storage rotation policies.
+5. **Static Batch Size Heuristic**:
+   - `BATCH_SIZE=2000` is an empirical baseline balancing network round-trips and memory overhead, rather than an auto-tuning algorithm dynamically adjusting to database connection latency.
+6. **Local Evaluation Secret Exemption**:
+   - The default development secret `dev-local-key-change-me` is permitted in local container configurations to enable seamless evaluation out-of-the-box.
+7. **Concurrency Test Harness Nuances**:
+   - In integration testing, test scenario (c) validates crash recovery via transactional error injection rather than OS-level process `SIGKILL`, and test scenario (d) executes multiple worker instances within a shared test runner process.
+8. **Claim Query Semantics**:
+   - The database claim query intentionally accepts `status IN ('PENDING', 'PROCESSING')` to facilitate transparent checkpoint recovery, relying on BullMQ's Redis distributed locks to prevent split-brain worker execution.
+9. **Orphaned `PENDING` Jobs (Dual-Write Edge Case)**:
+   - If the API server experiences catastrophic power loss in the exact microsecond between writing `PENDING` to PostgreSQL and enqueuing to Redis, the job remains orphaned in `PENDING`. Production deployments should implement an asynchronous sweeper cron to detect and fail stale `PENDING` jobs.
+10. **Domain Dependencies Nuance**:
+    - While the Domain layer performs strictly Zero I/O, `header-parser.ts` imports `csv-parse/sync` for synchronous string parsing, and `ImportProcessorService` directly imports `UnrecoverableError` from `bullmq` and `env` from configuration.
