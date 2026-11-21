@@ -163,7 +163,8 @@ export class PgImportRepository implements ImportRepositoryPort {
 
           let insertedRowNumbers = new Set<number>();
 
-          // 1. Geçerli müşteri satırlarını UNNEST ile toplu ekle
+          // 1. Geçerli müşteri satırlarını UNNEST ile toplu ekle,
+          // *****UNNEST ile dizi içinde paketli verileri ayırıyoruz ve hangi hatadan ne kadar aldığımızı sayabiliyoruz******
           if (input.validCustomers.length > 0) {
             const customerIds = input.validCustomers.map((c) => c.customer_id);
             const nationalIds = input.validCustomers.map((c) => c.national_id);
