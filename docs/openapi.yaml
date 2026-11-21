@@ -168,6 +168,142 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/v1/imports/{id}/errors:
+    get:
+      summary: List import row errors with keyset pagination
+      description: |
+        Returns row-level errors (validation failures and duplicates) using deterministic keyset (cursor) pagination.
+        Does not use OFFSET to ensure constant O(1) performance even with hundreds of thousands of errors.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Import job UUID
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+          description: Number of error items to return per page
+        - name: after_row
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+          description: Keyset cursor - return errors occurring after this source row number
+        - name: error_type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [VALIDATION, DUPLICATE]
+          description: Filter errors by type
+      responses:
+        '200':
+          description: Paginated error records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ImportRowError'
+                  pagination:
+                    type: object
+                    properties:
+                      next_cursor:
+                        type: integer
+                        nullable: true
+                        example: 104
+                      has_more:
+                        type: boolean
+                        example: true
+                      limit:
+                        type: integer
+                        example: 50
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/imports/{id}/errors/export:
+    get:
+      summary: Export import errors as streaming CSV
+      description: |
+        Streams all error records for the import job as a CSV file.
+        Uses HTTP chunked streaming (5000 rows per database chunk) to prevent server memory bloat.
+        Includes UTF-8 BOM for Microsoft Excel compatibility and sanitizes formula injection vectors (=, +, -, @).
+        Can be invoked while the job is PROCESSING (returns committed errors up to that point).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Import job UUID
+        - name: chunk_size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 5000
+          description: Database streaming chunk size
+      responses:
+        '200':
+          description: Streamed CSV file containing all error rows
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+                example: 'attachment; filename="import-9b1deb4d-errors.csv"'
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/imports/{id}/summary:
+    get:
+      summary: Get import execution summary and error distribution
+      description: |
+        Returns comprehensive execution metrics including total processed, success rate percentage,
+        total duration, throughput (rows per second), and breakdown by error code.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Import job UUID
+      responses:
+        '200':
+          description: Import summary statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -227,6 +363,79 @@ components:
             error_message:
               type: string
               nullable: true
+
+    ImportRowError:
+      type: object
+      properties:
+        id:
+          type: string
+        import_id:
+          type: string
+          format: uuid
+        row_number:
+          type: integer
+          example: 42
+        error_type:
+          type: string
+          enum: [VALIDATION, DUPLICATE]
+        error_codes:
+          type: array
+          items:
+            type: string
+          example: [INVALID_NATIONAL_ID, INVALID_PHONE]
+        error_message:
+          type: string
+          example: 'Invalid National ID checksum; Invalid phone format'
+        raw_data:
+          type: object
+          description: Raw values received in the CSV row
+        created_at:
+          type: string
+          format: date-time
+
+    ImportSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING, PROCESSING, COMPLETED, FAILED, PARTIALLY_COMPLETED]
+        total_rows:
+          type: integer
+          nullable: true
+        processed_rows:
+          type: integer
+        success_rows:
+          type: integer
+        failed_rows:
+          type: integer
+        duplicate_rows:
+          type: integer
+        success_rate:
+          type: number
+          example: 95.5
+          description: Percentage of processed rows successfully inserted
+        duration_seconds:
+          type: number
+          nullable: true
+          example: 12.45
+        rows_per_second:
+          type: number
+          nullable: true
+          example: 8032.12
+        error_distribution:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                example: INVALID_NATIONAL_ID
+              count:
+                type: integer
+                example: 120
 
     ErrorResponse:
       type: object
