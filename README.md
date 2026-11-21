@@ -2,7 +2,7 @@
 
 ### Türkçe Özet (Quick Summary in Turkish)
 
-Bu proje, **1.000.000 satıra kadar** müşteri CSV dosyalarını sabit bellek tüketimi (bounded memory) ve veri bütünlüğü garantisiyle işleyen asenkron bir mikroservistir.
+Bu proje, **1.000.000 satıra kadar** müşteri CSV dosyalarını sabit bellek tüketimi (bounded memory) ve veri bütünlüğü garantisiyle işleyen, çok süreçli (multi-process API & Worker) asenkron bir veri işleme servisidir (ingestion service).
 
 - **Hızlı Başlatma**: `cp .env.example .env && docker compose up --build` komutuyla PostgreSQL, Redis, Migrations, API ve Worker servisleri tek seferde ayağa kalkar.
 - **Mimarinin Temeli**: Express ile dosya kabul edilir (`202 Accepted`), Redis/BullMQ ile arka plana aktarılır, Worker `for-await` doğal backpressure akışıyla satırları 2.000'lik batch'ler halinde okur.
