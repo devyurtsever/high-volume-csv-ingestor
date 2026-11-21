@@ -55,7 +55,11 @@ export interface NormalizedCustomerRow {
   created_date: string;
 }
 
+export interface ValidationContext {
+  referenceToday?: string; // Örn: '2026-11-21' (Testlerde veya zaman dilimi korumasında referans tarih)
+}
+
 export type ValidationRule = (
   row: RawCustomerRow,
-  context?: { referenceToday?: string },
+  context?: ValidationContext,
 ) => ValidationIssue | ValidationIssue[] | null;

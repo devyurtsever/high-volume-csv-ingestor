@@ -1,14 +1,13 @@
 import type {
   NormalizedCustomerRow,
   RawCustomerRow,
+  ValidationContext,
   ValidationIssue,
   ValidationRule,
 } from './types.js';
 import { DEFAULT_CUSTOMER_RULES, normalizeTurkishPhone } from './rules.js';
 
-export interface ValidationContext {
-  referenceToday?: string; // Örn: '2026-11-21' (Testlerde veya zaman dilimi korumasında referans tarih)
-}
+export type { ValidationContext };
 
 /**
  * Tek bir ham müşteri satırını kural zincirinden geçirir.

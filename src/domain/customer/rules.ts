@@ -98,7 +98,8 @@ export const firstNameRule: ValidationRule = (row: RawCustomerRow) => {
   if (val.length > 100 || /^\d+$/.test(val) || /[<>]/.test(val)) {
     return {
       code: 'INVALID_FIRST_NAME',
-      message: 'Ad 1-100 karakter arasında olmalı, sadece sayılardan oluşmamalı ve < veya > içeremez',
+      message:
+        'Ad 1-100 karakter arasında olmalı, sadece sayılardan oluşmamalı ve < veya > içeremez',
       field: 'first_name',
     };
   }

@@ -58,9 +58,7 @@ export function validateHeaders(rawHeaders: string[]): HeaderValidationResult {
   );
 
   const isValid =
-    missingHeaders.length === 0 &&
-    duplicates.length === 0 &&
-    unexpectedHeaders.length === 0;
+    missingHeaders.length === 0 && duplicates.length === 0 && unexpectedHeaders.length === 0;
 
   return {
     isValid,
