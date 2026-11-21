@@ -39,7 +39,11 @@ export function createApp(appContainer = container): Express {
   });
 
   // 4. API v1 Routes (Protected with X-API-Key)
-  app.use('/api/v1/imports', authMiddleware, createImportRouter(appContainer.importController));
+  app.use(
+    '/api/v1/imports',
+    authMiddleware,
+    createImportRouter(appContainer.importController, appContainer.reportController),
+  );
 
   // 5. 404 & Central Error Handling
   app.use(notFoundMiddleware);

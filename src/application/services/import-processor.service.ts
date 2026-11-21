@@ -145,8 +145,10 @@ export class ImportProcessorService {
               validationErrors,
               lastRowNumber: currentRowNumber,
             });
-            validCustomers = [];
-            validationErrors = [];
+
+            // *** 2000 OLANA KADAR BU IKI DIZE DOLDURULUR ***
+            validCustomers = []; // HATASIZ SATIRLAR*
+            validationErrors = []; // HATALI SATIRLAR*
           }
         }
 
@@ -158,6 +160,8 @@ export class ImportProcessorService {
             validationErrors,
             lastRowNumber: currentRowNumber,
           });
+
+          // TESLIM SONRASI RAM BOŞALSIN DİYE SIFIRLADIM
           validCustomers = [];
           validationErrors = [];
         }
