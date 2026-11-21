@@ -30,3 +30,7 @@ repomix-output.*
 
 # Internal roadmaps & study notes
 roadmap.md
+
+# Large sample data (only 10k is committed per requirements)
+sample-data/*.csv
+!sample-data/sample-customers-10k.csv

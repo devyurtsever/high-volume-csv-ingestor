@@ -17,11 +17,14 @@
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
     "lint": "eslint .",
+    "benchmark": "tsx scripts/benchmark.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "generate:sample": "tsx scripts/generate-sample-csv.ts",
     "typecheck": "tsc --noEmit --project tsconfig.test.json",
     "migrate:up": "node-pg-migrate --envPath .env up",
     "migrate:down": "node-pg-migrate --envPath .env down",
+    "migrate:test": "DATABASE_URL=postgres://postgres:postgres@localhost:5433/customer_import_test node-pg-migrate up",
     "migrate:create": "node-pg-migrate create --migration-file-language js"
   },
   "dependencies": {
