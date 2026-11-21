@@ -2,16 +2,20 @@ import { createApp } from './api/app.js';
 import { env } from './config/env.js';
 import { logger } from './shared/logger.js';
 
+// Express HTTP API uygulamasını başlat
 const app = createApp();
 
 const server = app.listen(env.PORT, env.HOST, () => {
-  logger.info(`Server running at http://${env.HOST}:${env.PORT} in ${env.NODE_ENV} mode`);
+  logger.info(
+    `API Sunucusu http://${env.HOST}:${env.PORT} adresinde (${env.NODE_ENV} modunda) çalışıyor`,
+  );
 });
 
+// Sunucu kapatılırken mevcut isteklerin yarıda kalmasını önleyen kibar kapatma
 const shutdown = (signal: string) => {
-  logger.info(`Received ${signal}. Gracefully shutting down HTTP server...`);
+  logger.info(`${signal} sinyali alındı. HTTP sunucusu güvenle kapatılıyor...`);
   server.close(() => {
-    logger.info('HTTP server closed. Exiting process.');
+    logger.info('HTTP sunucusu kapatıldı. Süreç sonlandırılıyor.');
     process.exit(0);
   });
 };
