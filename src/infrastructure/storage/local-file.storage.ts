@@ -46,4 +46,37 @@ export class LocalFileStorage implements FileStoragePort {
       });
     });
   }
+
+  countLines(filePath: string): Promise<number> {
+    return new Promise((resolve, reject) => {
+      let lineCount = 0;
+      const stream = fs.createReadStream(filePath, { encoding: 'utf-8' });
+      const rl = readline.createInterface({
+        input: stream,
+        crlfDelay: Infinity,
+      });
+
+      rl.on('line', (line) => {
+        if (line.trim().length > 0) {
+          lineCount++;
+        }
+      });
+
+      rl.on('close', () => {
+        // İlk satır başlıktır, kalanlar veri satırıdır
+        const dataRows = Math.max(0, lineCount - 1);
+        resolve(dataRows);
+      });
+
+      rl.on('error', (err) => {
+        rl.close();
+        reject(err);
+      });
+
+      stream.on('error', (err) => {
+        rl.close();
+        reject(err);
+      });
+    });
+  }
 }

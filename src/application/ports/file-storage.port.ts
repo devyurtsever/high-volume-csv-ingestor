@@ -23,6 +23,12 @@ export interface FileStoragePort {
   readFirstLine(filePath: string): Promise<string>;
 
   /*
+   * Dosyanın toplam satır sayısını belleğe yüklemeden akış (stream) ile sayar.
+   * İlk satır başlık olduğu için (toplam dolu satır - 1) veri satırını döner.
+   */
+  countLines(filePath: string): Promise<number>;
+
+  /*
    * Geçersiz dosya, hatalı başlık veya işlem sonrasında dosyayı diskten siler.
    */
   deleteFile(filePath: string): Promise<void>;
