@@ -9,6 +9,8 @@ export default defineConfig({
     env: {
       NODE_ENV: 'test',
       DATABASE_URL: 'postgres://postgres:postgres@localhost:5433/customer_import_test',
+      REDIS_URL: 'redis://localhost:6380/1',
+      MAX_FILE_SIZE_BYTES: '1024',
     },
     coverage: {
       provider: 'v8',
