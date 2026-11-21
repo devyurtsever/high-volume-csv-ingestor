@@ -1,0 +1,286 @@
+openapi: 3.0.3
+info:
+  title: High-Volume Customer CSV Ingestion Service API
+  description: |
+    Asynchronous, stream-based customer CSV import service handling up to 1,000,000 records per file.
+    Follows REST principles, transactional batch checkpointing, and decoupled worker background processing.
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000
+    description: Local Development Server
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /health:
+    get:
+      summary: Health check endpoint
+      description: Returns health status, uptime, and timestamp of the API server.
+      security: []
+      responses:
+        '200':
+          description: Server is running and healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  uptime:
+                    type: number
+                    example: 12.34
+                  timestamp:
+                    type: string
+                    example: '2026-11-21T02:00:00.000Z'
+
+  /api/v1/imports:
+    post:
+      summary: Upload customer CSV file
+      description: |
+        Uploads a customer CSV file (up to 500 MB). Validates header structure,
+        stores the file to disk, creates a PENDING job record, and enqueues a background processing task.
+        Immediately returns 202 Accepted.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: CSV file containing customer records.
+      responses:
+        '202':
+          description: File accepted and enqueued for background processing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                    example: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
+                  status:
+                    type: string
+                    example: 'PENDING'
+                  statusUrl:
+                    type: string
+                    example: 'http://localhost:3000/api/v1/imports/9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
+                  original_filename:
+                    type: string
+                    example: 'customers.csv'
+                  file_size_bytes:
+                    type: integer
+                    example: 1048576
+                  created_at:
+                    type: string
+                    example: '2026-11-21T02:00:00.000Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+    get:
+      summary: List import jobs
+      description: Returns a paginated list of import jobs belonging to the authenticated client.
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+          description: Page number
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+          description: Items per page (max 100)
+      responses:
+        '200':
+          description: Paginated list of import jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ImportJob'
+                  total:
+                    type: integer
+                    example: 42
+                  page:
+                    type: integer
+                    example: 1
+                  limit:
+                    type: integer
+                    example: 20
+                  totalPages:
+                    type: integer
+                    example: 3
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/imports/{id}:
+    get:
+      summary: Get import job detail and status
+      description: |
+        Retrieves real-time counters, status, timestamps, and progress percentage for a specific import job.
+        Returns 404 if the job does not exist or belongs to another user (IDOR protection).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Import job UUID
+      responses:
+        '200':
+          description: Detailed import job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportJobDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Client API authentication key.
+
+  schemas:
+    ImportJob:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        original_filename:
+          type: string
+        file_size_bytes:
+          type: integer
+        status:
+          type: string
+          enum: [PENDING, PROCESSING, COMPLETED, FAILED, PARTIALLY_COMPLETED]
+        total_rows:
+          type: integer
+          nullable: true
+        processed_rows:
+          type: integer
+        success_rows:
+          type: integer
+        failed_rows:
+          type: integer
+        duplicate_rows:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    ImportJobDetail:
+      allOf:
+        - $ref: '#/components/schemas/ImportJob'
+        - type: object
+          properties:
+            progress_percentage:
+              type: integer
+              example: 75
+            last_committed_row:
+              type: integer
+              example: 150000
+            error_message:
+              type: string
+              nullable: true
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              example: BAD_REQUEST
+            message:
+              type: string
+              example: Invalid input parameters
+            details:
+              type: object
+              nullable: true
+
+  responses:
+    BadRequest:
+      description: Invalid request payload or parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Missing or invalid X-API-Key header
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found or access denied
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    PayloadTooLarge:
+      description: Uploaded file exceeds size limit (500 MB)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    UnprocessableEntity:
+      description: CSV headers are missing, duplicated, or invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ServiceUnavailable:
+      description: Background queue is temporarily unavailable (Dual-write guard)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
