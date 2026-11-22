@@ -167,7 +167,8 @@ export function UploadZone({ onUploadSuccess }: UploadZoneProps) {
           <div className="upload-success-left">
             <span className="upload-success-icon">✓</span>
             <span>
-              Dosya alındı. {successInfo.id ? `İşlem no: ${successInfo.id.slice(0, 8)}, ` : ''}arka planda işleniyor.
+              Dosya alındı. {successInfo.id ? `İşlem no: ${successInfo.id.slice(0, 8)}, ` : ''}arka
+              planda işleniyor.
             </span>
           </div>
           <button

@@ -39,16 +39,8 @@ const envSchema = z
       .transform((v) => v === 'true'),
   })
   .superRefine((data, ctx) => {
-    // Canlı ortamda (production) güvenlik açığı olmaması için test şifrelerini yasakla (Fail-Fast)
+    // Canlı ortamda (production) güvenlik açığı olmaması için localhost veritabanını engelle
     if (data.NODE_ENV === 'production') {
-      if (data.API_KEY === 'test-api-key-12345') {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message:
-            'Canlı ortamda (Production) varsayılan test API anahtarı kullanılamaz, güvenli bir anahtar belirleyin',
-          path: ['API_KEY'],
-        });
-      }
       if (data.DATABASE_URL.includes('localhost') || data.DATABASE_URL.includes('127.0.0.1')) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,

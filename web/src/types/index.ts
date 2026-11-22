@@ -1,9 +1,5 @@
 export type ImportStatus =
-  | 'PENDING'
-  | 'PROCESSING'
-  | 'COMPLETED'
-  | 'FAILED'
-  | 'PARTIALLY_COMPLETED';
+  'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'PARTIALLY_COMPLETED';
 
 export interface ImportJob {
   id: string;

@@ -17,7 +17,7 @@ export async function fetchImportErrors(
   id: string,
   afterRow?: number | null,
   errorType?: string | null,
-  limit = 50
+  limit = 50,
 ): Promise<ErrorsApiResponse> {
   const params = new URLSearchParams();
   params.set('limit', limit.toString());
@@ -29,7 +29,7 @@ export async function fetchImportErrors(
 
 export async function uploadCsvFile(
   file: File,
-  onProgress?: (percent: number) => void
+  onProgress?: (percent: number) => void,
 ): Promise<{ id: string; original_filename: string; status: string }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -59,7 +59,11 @@ export async function uploadCsvFile(
         let msg = `Yükleme hatası (${xhr.status})`;
         try {
           const res = JSON.parse(xhr.responseText);
-          msg = res.message || res.error || msg;
+          msg =
+            res?.error?.message ||
+            res?.message ||
+            (typeof res?.error === 'string' ? res.error : '') ||
+            msg;
         } catch {
           // ignore
         }

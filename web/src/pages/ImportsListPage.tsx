@@ -194,9 +194,7 @@ export function ImportsListPage() {
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         {job.status === 'PENDING' && (
-                          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                            Sırada
-                          </span>
+                          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Sırada</span>
                         )}
                         {job.status === 'FAILED' && (
                           <div style={{ display: 'inline-flex', justifyContent: 'center' }}>

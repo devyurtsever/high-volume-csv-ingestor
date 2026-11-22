@@ -30,11 +30,16 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
 
   if (!res.ok) {
     let errorDetail = '';
+    const rawText = await res.text();
     try {
-      const errJson = await res.json();
-      errorDetail = errJson.message || errJson.error || JSON.stringify(errJson);
+      const errJson = JSON.parse(rawText);
+      errorDetail =
+        errJson?.error?.message ||
+        errJson?.message ||
+        (typeof errJson?.error === 'string' ? errJson.error : '') ||
+        JSON.stringify(errJson);
     } catch {
-      errorDetail = await res.text();
+      errorDetail = rawText;
     }
     const err = new Error(errorDetail || `İstek başarısız (${res.status})`);
     (err as unknown as { status: number }).status = res.status;
