@@ -481,7 +481,14 @@ Benchmarks were conducted on both host (`tsx`) and containerized environments. D
 │   └── openapi.yaml            # OpenAPI 3.0 specification
 ├── sample-data/                # Sample datasets for testing & benchmarking
 ├── scripts/                    # Benchmark harness and data generation scripts
+│   ├── benchmark.ts            # API-based benchmark (upload → poll → summary)
+│   ├── benchmark-runner.ts     # Full benchmark and EXPLAIN runner
+│   ├── generate-sample-csv.ts  # Deterministic sample CSV generator
+│   └── init-db.sql             # Creates the isolated test database (docker-entrypoint-initdb.d)
+├── web/                        # Optional bonus web dashboard (React + Vite + Nginx)
+├── uploads/                    # Staged CSV uploads (git-ignored)
 ├── Dockerfile                  # Multi-stage production container build (rootless node)
-├── docker-compose.yml          # Production multi-service orchestration
+├── docker-compose.yml          # Multi-service orchestration (postgres, redis, migrate, api, worker, optional web via --profile ui)
+├── .env.example                # Environment template
 └── package.json                # Project dependencies and operational scripts
 ```
