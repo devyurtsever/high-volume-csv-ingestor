@@ -6,16 +6,14 @@ import { logger } from './shared/logger.js';
 const app = createApp();
 
 const server = app.listen(env.PORT, env.HOST, () => {
-  logger.info(
-    `API Sunucusu http://${env.HOST}:${env.PORT} adresinde (${env.NODE_ENV} modunda) çalışıyor`,
-  );
+  logger.info(`API Server is running at http://${env.HOST}:${env.PORT} (${env.NODE_ENV} mode)`);
 });
 
 // Sunucu kapatılırken mevcut isteklerin yarıda kalmasını önleyen kibar kapatma
 const shutdown = (signal: string) => {
-  logger.info(`${signal} sinyali alındı. HTTP sunucusu güvenle kapatılıyor...`);
+  logger.info(`${signal} signal received. Gracefully shutting down HTTP server...`);
   server.close(() => {
-    logger.info('HTTP sunucusu kapatıldı. Süreç sonlandırılıyor.');
+    logger.info('HTTP server closed. Terminating process.');
     process.exit(0);
   });
 };

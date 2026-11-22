@@ -108,6 +108,17 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  web:
+    profiles: ["ui"]
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - '8080:80'
+    depends_on:
+      - api
+
 volumes:
   postgres_data:
   redis_data:

@@ -352,8 +352,8 @@ Processing 1,000,000 rows without streaming causes unbounded heap growth, result
 
 ## 10. Known Limitations & Architectural Trade-offs
 
-1. **Multiline CSV Record Numbering**:
-   - `currentRowNumber` increments per emitted parsed customer record. While fully aligned with physical line numbers for standard rows, files containing multiline newlines within quoted cells may result in record index divergence relative to physical file line counts.
+1. **Multiline CSV Record Numbering & Physical Line Count Variance**:
+   - `currentRowNumber` increments per emitted parsed customer record. İlerleme yüzdesi fiziksel satır sayımına (`countLines`) dayanır; boş veya çok satırlı kayıtlarda ara değer sapabilir, iş bitince `total_rows` işlenen sayıya eşitlenerek düzelir. While fully aligned with physical line numbers for standard rows, files containing multiline newlines within quoted cells may result in record index divergence relative to physical file line counts.
 2. **Transaction Rollback Error Masking**:
    - If the PostgreSQL socket connection abruptly closes while issuing an explicit `ROLLBACK` statement, the secondary network error can mask the primary operational query failure in raw error logs.
 3. **Redis Failed Set Retention**:

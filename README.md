@@ -2,7 +2,7 @@
 
 ### Türkçe Özet (Quick Summary in Turkish)
 
-Bu proje, **1.000.000 satıra kadar** müşteri CSV dosyalarını sabit bellek tüketimi (bounded memory) ve veri bütünlüğü garantisiyle işleyen, çok süreçli (multi-process API & Worker) asenkron bir veri işleme servisidir (ingestion service).
+Bu proje, **1.000.000 satıra kadar** müşteri CSV dosyalarını sabit bellek tüketimi (bounded memory) ve checkpoint ile kaldığı yerden kayıpsız devam edebilen mimarisiyle işleyen, çok süreçli (multi-process API & Worker) asenkron bir veri işleme servisidir (ingestion service).
 
 - **Hızlı Başlatma**: `cp .env.example .env && docker compose up --build` komutuyla PostgreSQL, Redis, Migrations, API ve Worker servisleri tek seferde ayağa kalkar.
 - **Mimarinin Temeli**: Express ile dosya kabul edilir (`202 Accepted`), Redis/BullMQ ile arka plana aktarılır, Worker `for-await` doğal backpressure akışıyla satırları 2.000'lik batch'ler halinde okur.
@@ -89,6 +89,21 @@ npm run dev:worker
 
 > [!NOTE]
 > Running `docker compose up -d` without specifying `postgres redis` will also start the containerized `api` service on port 3000, causing a port collision (`EADDRINUSE`) if you subsequently execute `npm run dev` on the host. Always specify `docker compose up -d postgres redis` for local development.
+
+---
+
+### Mode C: Web Dashboard (Bonus Feature)
+
+The primary processing pipeline and core evaluation deliverables consist of the backend Express API and BullMQ Worker. Additionally, an optional bonus single-page web management dashboard is provided in `web/` (React 19 + TypeScript + Vite + Nginx reverse proxy).
+
+To start the full stack including the optional Web UI:
+
+```bash
+docker compose --profile ui up --build
+```
+
+- **Web UI Dashboard**: `http://localhost:8080` (Proxies `/api/` and `/docs/` directly with zero CORS)
+- Drag-and-drop CSV upload zone, real-time polling updates, keyset-paginated error table, slide-over error inspector, and direct CSV error report download.
 
 ---
 

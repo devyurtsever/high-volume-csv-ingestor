@@ -3,6 +3,7 @@ node_modules/
 
 # Production build output
 dist/
+*.tsbuildinfo
 
 # Environment variables
 .env
@@ -33,4 +34,6 @@ roadmap.md
 
 # Large sample data (only 10k is committed per requirements)
 sample-data/*.csv
+!sample-data/sample-customers-10k.csv
+*.csv
 !sample-data/sample-customers-10k.csv
