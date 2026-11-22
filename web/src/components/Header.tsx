@@ -16,7 +16,6 @@ export function Header() {
     <>
       <header className="app-header">
         <a href="/" className="logo-area">
-          <div className="logo-icon" />
           <span>Veri Aktarım ve İşleme Sistemi</span>
         </a>
 

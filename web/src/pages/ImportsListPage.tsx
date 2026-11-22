@@ -135,7 +135,7 @@ export function ImportsListPage() {
         )}
 
         {!isLoading && !isError && items.length > 0 && (
-          <div className="table-card" style={{ minHeight: 280 }}>
+          <div className="table-card">
             <table className={`data-table ${isPlaceholderData ? 'table-fetching' : ''}`}>
               <thead>
                 <tr>
